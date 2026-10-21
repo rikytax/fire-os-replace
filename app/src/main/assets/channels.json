@@ -1,0 +1,7 @@
+{
+  "channels": [
+    { "name": "Rai", "app": "RaiPlay", "color": "#0A3D91" },
+    { "name": "Mediaset", "app": "Mediaset Infinity", "color": "#C8102E" },
+    { "name": "La7", "app": "La7", "color": "#E07B00" }
+  ]
+}
