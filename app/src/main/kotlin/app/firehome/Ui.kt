@@ -128,6 +128,7 @@ fun HomeScreen(
     onApp: (InstalledApp) -> Unit,
     onAllApps: () -> Unit,
     onSettings: () -> Unit,
+    onMirror: () -> Unit,
 ) {
     val focus = rememberInitialFocus()
     Column(Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 48.dp)) {
@@ -137,7 +138,7 @@ fun HomeScreen(
             Tile(
                 "TV Live",
                 Modifier.size(380.dp, 190.dp),
-                subtitle = channels.joinToString(" · ") { it.name },
+                subtitle = "${channels.size} canali",
                 color = Accent,
                 focusRequester = focus,
                 onClick = onLive,
@@ -145,6 +146,7 @@ fun HomeScreen(
             if (last != null) {
                 Tile("Ultimo canale", Modifier.size(280.dp, 190.dp), subtitle = last.name, onClick = onLast)
             }
+            Tile("Duplica schermo", Modifier.size(280.dp, 190.dp), subtitle = "Tablet → TV", onClick = onMirror)
         }
         Spacer(Modifier.height(36.dp))
         Text("App", fontSize = 22.sp, color = Color.White.copy(alpha = 0.7f))
@@ -159,8 +161,15 @@ fun HomeScreen(
     }
 }
 
+/** Sottotitolo di un canale: dice subito se parte al volo o se devi prima installare l'app. */
+private fun subtitleOf(c: Channel, installed: List<InstalledApp>): String = when {
+    c.stream != null -> "Player integrato"
+    c.app != null && installed.findApp(listOf(c.app)) == null -> "Installa dall'Appstore"
+    else -> "App ufficiale"
+}
+
 @Composable
-fun LiveScreen(channels: List<Channel>, onOpen: (Channel) -> Unit) {
+fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (Channel) -> Unit) {
     val focus = rememberInitialFocus()
     val groups = channels.groupBy { it.group }
     LazyColumn(
@@ -180,7 +189,7 @@ fun LiveScreen(channels: List<Channel>, onOpen: (Channel) -> Unit) {
                         Tile(
                             c.name,
                             Modifier.size(260.dp, 150.dp),
-                            subtitle = if (c.stream != null) "Player integrato" else c.app,
+                            subtitle = subtitleOf(c, installed),
                             color = Color(c.color),
                             focusRequester = if (c === channels.first()) focus else null,
                         ) { onOpen(c) }

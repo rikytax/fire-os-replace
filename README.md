@@ -10,8 +10,8 @@ Una Home leggera per Fire TV Stick (Fire OS 5/7/8) al posto di quella Amazon: or
 
 | Schermata | Cosa fa |
 |---|---|
-| Home | Orologio, **TV Live**, **Ultimo canale**, Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, Tutte le app, Impostazioni. Compaiono solo le app installate. |
-| TV Live | I canali. Se hanno un flusso tuo → player integrato; altrimenti si apre l'app ufficiale (RaiPlay, Mediaset Infinity, La7). |
+| Home | Orologio, **TV Live**, **Ultimo canale**, **Duplica schermo** (tablet → TV), Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, Tutte le app, Impostazioni. Compaiono solo le app installate. |
+| TV Live | Due gruppi: *App ufficiali* (RaiPlay, Mediaset Infinity, La7: si aprono con un click) e i canali della tua `playlist.m3u`, che partono al volo nel player. |
 | Player | Su/Giù cambia canale, OK mostra il nome, Indietro esce. |
 | Tutte le app | Via di fuga: qualsiasi app installata. |
 
@@ -53,27 +53,27 @@ Per tornare indietro: `./scripts/fire.sh restore usb` (o l'IP).
 
 ## TV Live
 
-Per scelta il progetto **non include indirizzi di flussi non ufficiali** di Rai, Mediaset o La7: cambiano di continuo, hanno geo-blocco/DRM e non sono pensati per essere usati fuori dalle loro app. Di default i tre tile aprono le app ufficiali (che si trovano per nome tra le app installate; se mancano, si apre l'Appstore).
+Il progetto **non include flussi** di Rai, Mediaset o La7: sono ritrasmissioni non autorizzate, e non li fornisco né cerco. I tre canali *App ufficiali* aprono le app ufficiali; se una non è installata, il tile la segnala con "Installa dall'Appstore".
 
-Se hai una tua fonte (un tuo server, un flusso che sei autorizzato a usare), aggiungila in `channels.json`:
+Per avere i canali al volo nel player, usa una **playlist M3U** di una fonte di cui hai i diritti, per esempio un abbonamento IPTV regolare che ti fornisce il link. Il file va così:
 
-```json
-{
-  "channels": [
-    { "name": "Rai", "app": "RaiPlay", "color": "#0A3D91" },
-    { "name": "Mio canale", "group": "Miei", "stream": "https://esempio.it/live.m3u8", "color": "#2A2F3A" },
-    { "name": "Con DRM", "group": "Miei", "stream": "https://esempio.it/live.mpd", "type": "dash", "license": "https://esempio.it/licenza" }
-  ]
-}
+```
+#EXTM3U
+#EXTINF:-1 group-title="Generali",Nome canale
+https://fonte-che-hai-diritto.esempio/live.m3u8
+#EXTINF:-1 group-title="Film",Altro canale
+https://fonte-che-hai-diritto.esempio/altro.mpd
 ```
 
-Per aggiornare la lista senza ricompilare:
+Salvala come `playlist.m3u` e caricala sulla Fire Stick:
 
 ```bash
-adb push channels.json /sdcard/Android/data/app.firehome/files/channels.json
+adb push playlist.m3u /sdcard/Android/data/app.firehome/files/playlist.m3u
 ```
 
-Si rilegge appena riapri FireHome. Il file incluso nell'APK è `app/src/main/assets/channels.json`.
+Riapri FireHome: i canali compaiono in TV Live, raggruppati come `group-title`. Su/Giù cambia canale nel player. (Il percorso `/sdcard/Android/data/...` va verificato sulla tua versione di Fire OS: se `adb push` risponde *Permission denied*, dimmelo.)
+
+Per modificare i tre canali ufficiali, usa `channels.json` (anche questo si carica con `adb push` nella stessa cartella).
 
 ## Personalizzare le app
 

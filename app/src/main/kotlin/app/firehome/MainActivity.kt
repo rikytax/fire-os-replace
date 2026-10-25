@@ -46,8 +46,9 @@ class MainActivity : ComponentActivity() {
                         onApp = ::launch,
                         onAllApps = { screen = Screen.AllApps },
                         onSettings = { start(Intent(Settings.ACTION_SETTINGS)) },
+                        onMirror = { start(Intent(Settings.ACTION_CAST_SETTINGS), fallback = Intent(Settings.ACTION_DISPLAY_SETTINGS)) },
                     )
-                    Screen.Live -> LiveScreen(channels, onOpen = ::open)
+                    Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
                     Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch)
                     is Screen.Playing -> PlayerScreen(s.channel, zap = ::zap)
                 }
@@ -57,9 +58,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Ricarica a ogni ritorno: vede le app appena installate e un channels.json aggiornato.
+        // Ricarica a ogni ritorno: vede le app appena installate e i file channels.json / playlist.m3u aggiornati.
         apps = installedApps(this)
-        channels = loadChannels(this)
+        channels = loadChannels(this) + loadPlaylist(this)
     }
 
     // Il tasto Home mentre siamo già aperti riporta alla schermata principale.
@@ -98,10 +99,11 @@ class MainActivity : ComponentActivity() {
         start(Intent(Intent.ACTION_VIEW, Uri.parse("amzn://apps/android?s=" + Uri.encode(name))))
     }
 
-    private fun start(intent: Intent) {
+    private fun start(intent: Intent, fallback: Intent? = null) {
         try {
             startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: ActivityNotFoundException) {
+            if (fallback != null) return start(fallback)
             Toast.makeText(this, "Impossibile aprire", Toast.LENGTH_SHORT).show()
         } catch (e: SecurityException) {
             Toast.makeText(this, "Impossibile aprire", Toast.LENGTH_SHORT).show()
