@@ -32,13 +32,24 @@ Qui Amazon mette ostacoli: da certi aggiornamenti di Fire OS 7 il tasto Home tor
 
 ## Togliere il bloatware
 
+Un solo comando, senza domande:
+
 ```bash
-./scripts/fire.sh packages <ip>   # cosa c'è installato (Amazon)
-./scripts/fire.sh debloat <ip>    # rimuove l'elenco prudente (reversibile)
-./scripts/fire.sh restore <ip>    # rimette tutto
+./scripts/fire.sh clean usb        # Fire Stick collegata col cavo micro-USB al PC
+./scripts/fire.sh clean 192.168.1.50   # oppure via Wi-Fi, con l'IP della Fire Stick
 ```
 
-Poi, a mano, in *Impostazioni → Preferenze*: *Contenuti in primo piano* → off, *Pubblicità basata sugli interessi* → off, *Dati di utilizzo* → off.
+Lo script rimuove le app Amazon dell'elenco `BLOAT` in `scripts/fire.sh` (shopping, GameCircle, Kindle, Audible, Amazon Music e Photos, IMDb/Freevee, note legali e di rilascio, assistenza clienti). Non tocca Alexa, Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, RaiPlay, Mediaset Infinity o La7. Poi scrive `fire-report.txt` con gli altri pacchetti Amazon rimasti, da guardare con calma.
+
+Per tornare indietro: `./scripts/fire.sh restore usb` (o l'IP).
+
+**Limiti da sapere:**
+- Gli elenchi dei nomi vengono dalla community e non li ho potuti verificare su una Fire Stick vera. Un nome sbagliato viene saltato, non fa danni.
+- Le pubblicità della Home le toglie solo FireHome (sostituisce la Home Amazon).
+- Gli interruttori della privacy (*Pubblicità basata sugli interessi*, *Dati di utilizzo*) non si cambiano da ADB in modo verificato: falli a mano in *Impostazioni → Preferenze*.
+- Gli aggiornamenti Amazon possono riattivare le app: rilancia `clean` dopo ogni aggiornamento.
+
+**Collegamento USB.** Il micro-USB della Fire Stick è pensato per l'alimentazione, ma accetta anche ADB con un PC. Su Windows spesso servono driver aggiuntivi: se non va, usa il Wi-Fi.
 
 ## TV Live
 
@@ -77,7 +88,7 @@ app/src/main/kotlin/app/firehome/
   Player.kt         player Media3/ExoPlayer
   Channels.kt       lettura di channels.json
   Apps.kt           app installate e scorciatoie
-scripts/fire.sh     debloat / restore / home-on / home-off via ADB
+scripts/fire.sh     clean / restore / home-on / home-off via ADB (USB o Wi-Fi)
 .github/workflows/  build dell'APK
 ```
 
