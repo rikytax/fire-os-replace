@@ -401,6 +401,7 @@ def find_apk(given):
     """FireHome.apk: quello indicato, uno locale, oppure l'ultima versione pubblicata su GitHub."""
     candidates = [Path(given)] if given else [
         HERE.parent / "FireHome.apk",
+        Path.home() / "Downloads" / "FireHome.apk",
         HERE.parent / "app/build/outputs/apk/release/app-release.apk",
     ]
     for c in candidates:
@@ -415,7 +416,8 @@ def find_apk(given):
         with urllib.request.urlopen(APK_URL, timeout=120) as r, open(apk, "wb") as f:
             shutil.copyfileobj(r, f)
     except Exception as e:
-        say(f"  FireHome non è ancora scaricabile ({e}): salto l'installazione dell'app.")
+        say(f"  non riesco a scaricare FireHome ({e}). Se il repository è privato, scarica FireHome.apk dalla pagina Releases")
+        say("  del repository e mettilo nella cartella Download (o accanto a questo script), poi rilancia: salto l'app per ora.")
         return None
     try:
         with urllib.request.urlopen(APK_URL + ".sha256", timeout=30) as r:

@@ -15,6 +15,8 @@ Pensato per la **Fire TV Stick 3ª gen (Fire OS 7.7.1.7, build PS7717/5741)**. P
    - Linux: `./pulisci-firestick.sh`
 3. **Sulla TV:** la prima volta compare *Consenti debug USB?*: scegli *Consenti sempre da questo computer* e premi OK. Il resto è automatico.
 
+> **Repository privato?** Lo script scarica FireHome dalla Release del repository: se il repository è privato il download fallisce. Due soluzioni: rendere pubblico il repository (*Settings → General → Danger zone → Change visibility*), oppure scaricare a mano `FireHome.apk` dalla pagina *Releases* (da loggati) e metterlo nella cartella *Download* o accanto allo script: lo trova da solo. La pulizia funziona comunque.
+
 Lo script trova da solo la Fire Stick (USB o rete), scarica `adb` se manca e fa tutto senza domande. Se non la trova chiede l'IP (*Impostazioni → My Fire TV → Info → Rete*).
 
 ## Cosa fa, in ordine
