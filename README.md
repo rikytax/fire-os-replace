@@ -33,6 +33,7 @@ Il resto è automatico: trova la Fire Stick da sola (USB o rete), pulisce, scari
 | **Netflix, Prime Video, Disney+** | **No, solo col piano senza pubblicità** | Le pubblicità sono inserite nel flusso protetto da DRM: non si possono togliere in modo affidabile, e non ti aiuto a eludere la protezione. Se il tuo piano le include, cambia piano (Netflix, Disney+ e Prime Video hanno un'opzione senza pubblicità: controlla prezzi e disponibilità sul tuo account). |
 | **Jellyfin** | Già senza | Non ha pubblicità. |
 | **RaiPlay, Mediaset Infinity, La7** | No | Le pubblicità fanno parte della trasmissione; Infinity ha un abbonamento a pagamento. |
+| **Saltarle o farle durare un attimo** | **No** | Nelle app a pagamento gli annunci sono inseriti dal server nello stesso flusso del programma, con tempi e conteggi decisi lato servizio: non c'è un punto in cui "accelerarli" o scavalcarli, e manometterli sarebbe aggirare il servizio, cosa che non faccio. Il piano senza pubblicità è l'unica via. |
 | **DNS che blocca le pubblicità** | Poco | Aiuta contro telemetria e tracker, ma YouTube serve video e pubblicità dagli stessi server: [non si può bloccare dalla rete](https://github.com/humblemuzzu/dumbtv/blob/main/docs/YOUTUBE.md). |
 
 Con `--youtube`, la prima volta, col telecomando in SmartTube: menu a sinistra → *Impostazioni → Generale → Nascondi contenuti* → **Nascondi Shorts ovunque**; *Impostazioni → Player → Preset video* → **1080p 60fps vp9** (mai `av01`: la Fire Stick non ha il decoder). "Alexa, cerca su YouTube" non apre SmartTube, perché Alexa chiama l'app Amazon.
@@ -46,6 +47,8 @@ python3 scripts/firestick.py status     # memoria, spazio libero, stato di puliz
 python3 scripts/firestick.py screenshot # schermata della TV in ~/Immagini
 python3 scripts/firestick.py cache      # libera la cache delle app (utile: lo spazio è poco)
 python3 scripts/firestick.py install app.apk   # installa un'app dal PC
+python3 scripts/firestick.py hdmi       # diagnosi HDMI-CEC (Anynet+ dei Samsung): salva fire-hdmi.txt
+python3 scripts/firestick.py discover-live  # indirizzi diretti dei canali nelle app Rai/Mediaset/La7
 python3 scripts/firestick.py check      # cosa ha riattivato Amazon? (lo fa anche il timer settimanale)
 python3 scripts/firestick.py restore    # torna a com'era prima
 python3 scripts/firestick.py adb-off    # spegne il Debug ADB a lavoro finito
@@ -94,11 +97,42 @@ https://fonte-che-hai-diritto.esempio/live.m3u8
 
 Salvala come `playlist.m3u` e caricala: `adb push playlist.m3u /sdcard/Android/data/app.firehome/files/playlist.m3u`. Su/Giù cambia canale. (Su Fire OS 7 il percorso dovrebbe funzionare; se risponde *Permission denied*, dimmelo.) I tre canali ufficiali si modificano con `channels.json`, nella stessa cartella.
 
+**Collegamento diretto a un canale.** In `channels.json` un canale può avere `"url"` (la pagina ufficiale della diretta) e `"app"`: il tile apre quell'indirizzo con l'app indicata. Non ho indirizzi verificati per Mediaset e La7, quindi non li ho scritti a caso: lancia `python3 scripts/firestick.py discover-live` con le app installate, mandami `fire-live-discovery.txt` e collego i canali più visti (Rai 1, Canale 5, Rai 2, Rai 3, Italia 1, Rete 4, La7...) uno per uno. Finché non c'è, i tre tile aprono l'app ufficiale.
+
 **Duplica schermo:** il tile apre le Impostazioni e ti dice dove andare (*Display e suoni → Abilita duplicazione schermo*): non esiste un'attività verificata che apra direttamente la schermata. Più veloce: **tieni premuto Home** e scegli *Mirroring*. Lo script non tocca i servizi di casting.
+
+## Domotica (Home Assistant)
+
+I comandi vocali di Alexa per luci e prese funzionano già (lo script non li tocca: **non usare `--extras`**, che spegne la parte smart home di Alexa). In più FireHome può mostrare tile "Casa" in Home che chiamano [Home Assistant](https://www.home-assistant.io/). Si configura con `domotica.json`, da caricare come la playlist: `adb push domotica.json /sdcard/Android/data/app.firehome/files/domotica.json`.
+
+```json
+{
+  "url": "http://192.168.1.10:8123",
+  "actions": [
+    { "name": "Luci salotto", "webhook": "id-segreto-del-webhook" },
+    { "name": "Scena cinema", "webhook": "altro-id" }
+  ]
+}
+```
+
+Consigliato: in Home Assistant crea un'**automazione con trigger "Webhook"** per ogni azione (luci, scena, riscaldamento...) e metti qui solo l'id: sulla Fire Stick non resta nessuna credenziale. In alternativa si può chiamare un servizio, ma serve un token (`"token": "..."`, `"service": "light/toggle", "entity": "light.salotto"`): in quel caso usa un utente dedicato con permessi limitati, perché il token sta in un file leggibile sulla Fire Stick.
+
+## Anynet+: la TV scollega la Fire Stick
+
+Anynet+ è il nome Samsung dell'HDMI-CEC: la TV e la Fire Stick si scambiano comandi (accensione, ingresso attivo, standby). Con la voce la Fire Stick "sveglia" la TV e se il collegamento CEC si perde, la TV segnala il dispositivo come scollegato. **Non esiste un comando verificato per spegnere il CEC dalla Fire Stick**, quindi lo script non lo cambia di nascosto: lancia `python3 scripts/firestick.py hdmi` **subito dopo che succede**; salva `fire-hdmi.txt` con le impostazioni e il log, e stampa le cause note, dalla più semplice ([fonti](https://eu.community.samsung.com/t5/tv/amazon-fire-stick-no-longer-recognised-for-smart-remote/td-p/372241)):
+
+1. **Alimentazione:** se la Fire Stick è alimentata dalla USB della TV (circa 0,5 A, ne serve 1 A), usa l'alimentatore a muro. È la causa più comune e la prova più economica.
+2. **Porta HDMI:** prova HDMI 1.
+3. **Sulla TV:** *Impostazioni → Generali → Gestione dispositivi esterni → Anynet+ (HDMI-CEC)*: spegni, riavvia la TV, riaccendi.
+4. **Sulla Fire Stick:** *Impostazioni → Display e suoni → Controllo dispositivo HDMI CEC*: spegni, riavvia, riaccendi. Spegnerlo toglie l'accensione sincronizzata con la TV.
+5. Se è iniziato dopo un aggiornamento della TV, controlla se ne esiste uno più recente.
+
+Mandami `fire-hdmi.txt` se persiste.
 
 ## Idee per il futuro
 
 - **AdGuard Home sul tuo PC Nobara** (con Podman) come DNS di tutta la casa: blocca tracker e pubblicità di rete per tutti i dispositivi, Fire Stick compresa. Servirebbe impostarlo come DNS sul router.
+- **Notifiche domotica** (citofono, lavatrice finita) come messaggio sulla TV, da Home Assistant.
 - **Telecomando dal PC:** inviare tasti e testo alla Fire Stick con `adb shell input` (scrivere le password con la tastiera del PC è molto più comodo).
 - **Backup dei dati delle app** (Jellyfin, impostazioni) prima di un ripristino di fabbrica.
 - **Contatore RAM e spazio libero nella Home di FireHome**, visto che sulla tua Fire Stick lo spazio è poco (circa 1,4 GB liberi).

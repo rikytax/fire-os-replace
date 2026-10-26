@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -127,6 +128,8 @@ fun HomeScreen(
     onLast: () -> Unit,
     onApp: (InstalledApp) -> Unit,
     onAllApps: () -> Unit,
+    casa: List<String>,
+    onCasa: (Int) -> Unit,
     onSettings: () -> Unit,
     onMirror: () -> Unit,
 ) {
@@ -155,6 +158,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp),
         ) {
             items(shortcuts) { s -> Tile(s.label, Modifier.size(220.dp, 124.dp), color = s.color) { onApp(s.app) } }
+            itemsIndexed(casa) { i, name -> Tile(name, Modifier.size(220.dp, 124.dp), color = Color(0xFFB7791F)) { onCasa(i) } }
             item { Tile("Tutte le app", Modifier.size(220.dp, 124.dp), onClick = onAllApps) }
             item { Tile("Impostazioni", Modifier.size(220.dp, 124.dp), onClick = onSettings) }
         }
@@ -164,6 +168,7 @@ fun HomeScreen(
 /** Sottotitolo di un canale: dice subito se parte al volo o se devi prima installare l'app. */
 private fun subtitleOf(c: Channel, installed: List<InstalledApp>): String = when {
     c.stream != null -> "Player integrato"
+    c.url != null && c.app != null && installed.findApp(listOf(c.app)) != null -> "Apre direttamente il canale"
     c.app != null && installed.findApp(listOf(c.app)) == null -> "Installa dall'Appstore"
     else -> "App ufficiale"
 }

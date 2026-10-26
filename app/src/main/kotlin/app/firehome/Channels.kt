@@ -8,6 +8,7 @@ import java.io.File
 /**
  * Un canale può essere:
  *  - [stream] valorizzato → riprodotto dal player integrato (flusso tuo, HLS o DASH);
+ *  - [url] valorizzato → apre quella pagina ufficiale (es. la diretta di un canale) con l'app indicata in [app], se installata;
  *  - solo [app] → apre l'app ufficiale (cerca per nome o package tra le app installate).
  */
 data class Channel(
@@ -15,6 +16,7 @@ data class Channel(
     val group: String,
     val color: Int,
     val app: String?,
+    val url: String?,
     val stream: String?,
     val dash: Boolean,
     val license: String?,
@@ -57,6 +59,7 @@ private fun parseM3u(text: String): List<Channel> {
                     group = group,
                     color = Color.parseColor("#2A2F3A"),
                     app = null,
+                    url = null,
                     stream = line,
                     dash = line.substringBefore('?').endsWith(".mpd"),
                     license = null,
@@ -78,6 +81,7 @@ private fun parseChannels(json: String): List<Channel> {
             group = o.optString("group", "Dirette"),
             color = Color.parseColor(o.optString("color", "#2A2F3A")),
             app = o.optString("app").ifEmpty { null },
+            url = o.optString("url").ifEmpty { null },
             stream = o.optString("stream").ifEmpty { null },
             dash = o.optString("type") == "dash",
             license = o.optString("license").ifEmpty { null },

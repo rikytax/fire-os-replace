@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
 
     private var apps by mutableStateOf(emptyList<InstalledApp>())
     private var channels by mutableStateOf(emptyList<Channel>())
+    private var domotica by mutableStateOf<Domotica?>(null)
     private var lastName by mutableStateOf<String?>(null)
     private var screen by mutableStateOf<Screen>(Screen.Home)
 
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
                         onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
                         onApp = ::launch,
                         onAllApps = { screen = Screen.AllApps },
+                        casa = domotica?.actions?.map { it.name } ?: emptyList(),
+                        onCasa = ::runHomeAction,
                         onSettings = ::openSettings,
                         onMirror = ::openMirroring,
                     )
@@ -61,6 +64,7 @@ class MainActivity : ComponentActivity() {
         // Ricarica a ogni ritorno: vede le app appena installate e i file channels.json / playlist.m3u aggiornati.
         apps = installedApps(this)
         channels = loadChannels(this) + loadPlaylist(this)
+        domotica = loadDomotica(this)
     }
 
     // Siamo sul display: il servizio Home toglie la copertura e non rilancia più nulla.
@@ -87,6 +91,13 @@ class MainActivity : ComponentActivity() {
         }
         val query = channel.app
         val target = query?.let { apps.findApp(listOf(it)) }
+        val link = channel.url
+        if (link != null && (target != null || query == null)) {
+            val view = Intent(Intent.ACTION_VIEW, Uri.parse(link))
+            target?.let { view.setPackage(it.pkg) }
+            start(view)
+            return
+        }
         when {
             target != null -> launch(target)
             query != null -> installFromAppstore(query)
@@ -102,6 +113,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launch(app: InstalledApp) = start(app.intent)
+
+    private fun runHomeAction(index: Int) {
+        val ha = domotica ?: return
+        val action = ha.actions.getOrNull(index) ?: return
+        ha.trigger(action) { ok ->
+            runOnUiThread { Toast.makeText(this, if (ok) "${action.name}: fatto" else "${action.name}: non riuscito", Toast.LENGTH_SHORT).show() }
+        }
+    }
 
     // Su Fire OS ACTION_SETTINGS apre un ponte che rimanda alla Home Amazon: serve la categoria LEANBACK_SETTINGS.
     private fun openSettings() =

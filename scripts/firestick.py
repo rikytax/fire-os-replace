@@ -12,6 +12,8 @@ Utilità:
   python3 scripts/firestick.py screenshot   salva una schermata della TV in Immagini
   python3 scripts/firestick.py cache        libera la cache delle app
   python3 scripts/firestick.py install F.apk [G.apk ...]   installa app dal computer
+  python3 scripts/firestick.py hdmi         diagnosi HDMI-CEC (Anynet+ sui Samsung): salva fire-hdmi.txt
+  python3 scripts/firestick.py discover-live   cerca i collegamenti diretti ai canali nelle app RaiPlay, Mediaset, La7
 
 Opzioni: un IP o 'usb' come ultimo argomento per saltare la ricerca automatica; --youtube, --extras, --tv,
 --no-home, --apk FILE, --reboot (vedi --help). Pensato per Nobara Linux (e altre Fedora).
@@ -54,7 +56,7 @@ SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee0
 SMARTTUBE_VERSION_CODE = 2446
 STOCK_YOUTUBE = "com.amazon.firetv.youtube"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install")
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -686,6 +688,42 @@ def run_install(tv, files):
         say(f"  {apk.name}: {'installata' if 'Success' in out else 'NON riuscita: ' + out.strip().splitlines()[-1]}")
 
 
+def run_hdmi(tv):
+    """Sola lettura: impostazioni CEC e righe recenti del log, per capire perché la TV (Anynet+) scollega la Fire Stick."""
+    lines = ["Impostazioni HDMI-CEC lette dalla Fire Stick (non presente = Fire OS usa un'altra voce)"]
+    for key in ("hdmi_control_enabled", "hdmi_control_auto_wakeup_enabled", "hdmi_control_auto_device_off_enabled"):
+        lines.append(f"  {key} = {tv.setting('global', key) or '(non presente)'}")
+    lines += ["", "dumpsys hdmi_control (inizio):"] + tv.sh("dumpsys", "hdmi_control").splitlines()[:80]
+    log = [l for l in tv.sh("logcat", "-d", "-t", "3000").splitlines() if re.search(r"cec|hdmi|anynet", l, re.I)]
+    lines += ["", f"Log recente su CEC/HDMI ({len(log[-200:])} righe):"] + log[-200:]
+    Path("fire-hdmi.txt").write_text("\n".join(lines) + "\n")
+    say("Salvato fire-hdmi.txt. Se il problema succede mentre usi la voce, lancia questo comando SUBITO dopo.")
+    say()
+    say("Cause note con Samsung (Anynet+) e come provare, dalla più semplice:")
+    say("  1. Alimentazione: se la Fire Stick è alimentata dalla USB della TV (circa 0,5 A, ne serve 1 A), usa l'alimentatore a muro.")
+    say("  2. Porta HDMI: prova HDMI 1, di solito la più compatibile con il CEC.")
+    say("  3. Sulla TV: Impostazioni > Generali > Gestione dispositivi esterni > Anynet+ (HDMI-CEC): spegni, riavvia la TV, riaccendi.")
+    say("  4. Sulla Fire Stick: Impostazioni > Display e suoni > Controllo dispositivo HDMI CEC: spegni, riavvia, riaccendi.")
+    say("  5. Se è iniziato dopo un aggiornamento della TV, controlla se ce n'è uno più recente.")
+    say("  Spegnere il CEC toglie l'accensione e lo spegnimento sincronizzati con la TV: provalo per capire se è lui la causa.")
+
+
+def run_discover_live(tv):
+    """Sola lettura: cerca nelle app dei canali gli schemi e gli indirizzi che aprono una diretta."""
+    keys = ("raiplay", "rainet", "mediaset", "infinity", "la7")
+    pkgs = sorted(p for p in tv.packages("-e") if any(k in p.lower() for k in keys))
+    if not pkgs:
+        die("Non trovo RaiPlay, Mediaset Infinity o La7: installale dall'Appstore e riprova.")
+    lines = []
+    for p in pkgs:
+        lines.append(f"=== {p}")
+        dump = tv.sh("dumpsys", "package", p).splitlines()
+        lines += [l.rstrip() for l in dump if re.search(r"Scheme:|Authority:|Path:|android.intent.action.VIEW", l)]
+    Path("fire-live-discovery.txt").write_text("\n".join(lines) + "\n")
+    say(f"Salvato fire-live-discovery.txt ({len(pkgs)} app: {', '.join(pkgs)}).")
+    say("Mandamelo: con quegli indirizzi posso collegare ogni tile a un canale preciso (campo \"url\" in channels.json).")
+
+
 # --- comandi ----------------------------------------------------------------
 
 def write_report(tv, known, keep, extra=None):
@@ -780,7 +818,7 @@ def main():
     for stream in (sys.stdout, sys.stderr):  # la console di Windows può non reggere le lettere accentate
         stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", nargs="?", default="all", help="all (predefinito), clean, home, check, restore, adb-off, status, screenshot, cache, install")
+    parser.add_argument("command", nargs="?", default="all", help="all (predefinito), clean, home, check, restore, adb-off, status, screenshot, cache, install, hdmi, discover-live")
     parser.add_argument("target", nargs="?", default="auto", help="'usb', un IP, oppure niente per cercarla da solo")
     parser.add_argument("more", nargs="*", help="altri file .apk (solo per 'install')")
     parser.add_argument("--youtube", action="store_true", help="installa SmartTube (YouTube senza pubblicità) e disattiva YouTube di Amazon")
@@ -820,6 +858,10 @@ def main():
         run_cache(tv)
     if args.command == "install":
         run_install(tv, files)
+    if args.command == "hdmi":
+        run_hdmi(tv)
+    if args.command == "discover-live":
+        run_discover_live(tv)
     if args.command == "adb-off":
         tv.sh("settings", "put", "global", "adb_enabled", "0")
         say("Debug ADB spento. Per riaccenderlo: Impostazioni > My Fire TV > Opzioni sviluppatore.")
