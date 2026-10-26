@@ -37,10 +37,13 @@ jobs:
           name: FireHome-apk
           path: out/*
 
-      # Con un tag (es. v0.1.0) l'APK diventa scaricabile con un link diretto,
-      # comodo per l'app "Downloader" sulla Fire Stick.
+      # Pubblica (o aggiorna) la Release da cui lo script scarica FireHome.apk:
+      # a ogni build riuscita su questo branch, e con un tag v*.
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref_type == 'tag' || github.ref == 'refs/heads/ccr-59dd268d-hqgwa2'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.2.0' }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: out/*
