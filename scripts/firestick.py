@@ -1,28 +1,47 @@
 #!/usr/bin/env python3
-"""Pulizia della Fire Stick via ADB, senza domande.
+"""FireHome: pulisce la Fire Stick e ne sostituisce la Home. Un solo comando, nessuna domanda.
 
-  python3 scripts/firestick.py clean   <usb|IP> --stick     disattiva telemetria, pubblicità e app inutili
-  python3 scripts/firestick.py check   <usb|IP> --stick     elenca cosa Amazon ha riattivato (dopo un aggiornamento)
-  python3 scripts/firestick.py restore <usb|IP>             rimette tutto com'era prima di "clean"
-  python3 scripts/firestick.py adb-off <usb|IP>             spegne il Debug ADB (chiude la porta 5555)
+  python3 scripts/firestick.py            fa tutto: trova la Fire Stick, pulisce, installa FireHome, prende la Home
+  python3 scripts/firestick.py check      elenca cosa Amazon ha riattivato (dopo un aggiornamento)
+  python3 scripts/firestick.py restore    rimette tutto com'era prima
+  python3 scripts/firestick.py adb-off    spegne il Debug ADB (chiude la porta 5555)
+  (anche: clean = solo la pulizia, home = solo FireHome)
+
+Opzioni: un IP o 'usb' come ultimo argomento per saltare la ricerca automatica; --extras, --tv, --no-home,
+--apk FILE, --reboot (vedi --help).
 
 Prima sulla Fire Stick: Impostazioni > My Fire TV > Opzioni sviluppatore > Debug ADB = ON.
 Le app vengono solo disattivate per l'utente 0 (pm disable-user): niente viene disinstallato.
 L'elenco dei pacchetti è in firestick-bloat.txt.
 """
 import argparse
+import concurrent.futures
+import hashlib
 import json
+import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
+import time
+import urllib.request
+import zipfile
 from pathlib import Path
 
-LIST_FILE = Path(__file__).resolve().parent / "firestick-bloat.txt"
+HERE = Path(__file__).resolve().parent
+LIST_FILE = HERE / "firestick-bloat.txt"
 STATE_DIR = Path.home() / ".firestick-clean"
 REPORT = Path("fire-report.txt")
 BATCH = 8
 
+APP_ID = "app.firehome"
+GUARD = f"{APP_ID}/{APP_ID}.HomeGuard"
+GUARD_LABEL = "FireHome tasto Home"
+APK_URL = "https://github.com/rikytax/fire-os-replace/releases/latest/download/FireHome.apk"
+
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -34,47 +53,172 @@ CORE_RE = re.compile(
 # I servizi che hai chiesto di tenere: nessun pacchetto con questi nomi viene toccato, qualunque cosa dica l'elenco.
 KEEP_TOKENS = ("netflix", "firebat", "disney", "jellyfin", "buddyfit", "mediaset", "la7", "raiplay", "rainet")
 
+# Opzioni su pubblicità e uso dei dati (stesse chiavi che scrivono gli interruttori delle Impostazioni).
+PRIVACY = [
+    ("secure", "amz_limit_ad_tracking", "1"),
+    ("secure", "limit_ad_tracking", "1"),
+    ("secure", "non_amz_limit_ad_tracking", "1"),
+    ("secure", "advertisingIdApp:interestBasedAds:value", "0"),
+    ("secure", "USAGE_METRICS_UPLOAD_ENABLED", "0"),
+    ("secure", "usage_metrics_marketing_enabled", "0"),
+    ("secure", "settingsApp:appUsageData:value", "0"),
+    ("secure", "settingsApp:deviceUsageData:value", "0"),
+    ("global", "heads_up_notifications_enabled", "0"),
+    ("global", "com.amazon.tv.settings.featured_item_video_enabled", "0"),
+    ("global", "com.amazon.tv.settings.featured_item_video_volume", "0.0"),
+]
+# Interfaccia più scattante. Solo Android 9 e precedenti: su Fire OS 8 a 0.5 i menu laterali non rispondono.
+ANIMATIONS = [
+    ("global", "window_animation_scale", "0.5"),
+    ("global", "transition_animation_scale", "0.5"),
+]
+
+ADB = "adb"
+
+
+def say(text=""):
+    print(text, flush=True)
+
 
 def die(message, code=2):
-    print(f"Errore: {message}", file=sys.stderr)
+    print(f"\nErrore: {message}", file=sys.stderr)
     sys.exit(code)
 
 
-def adb(*args):
+# --- adb: ricerca, download, collegamento -----------------------------------
+
+def adb(*args, timeout=60):
     try:
-        r = subprocess.run(["adb", *args], capture_output=True, text=True, timeout=60)
+        r = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         die("La Fire Stick non risponde.")
     return (r.stdout + r.stderr).replace("\r", "")
 
 
+def find_adb():
+    """adb nel PATH, oppure quello già scaricato, oppure lo scarica da Google (Android platform-tools)."""
+    found = shutil.which("adb")
+    if found:
+        return found
+    exe = "adb.exe" if os.name == "nt" else "adb"
+    local = STATE_DIR / "platform-tools" / exe
+    if local.exists():
+        return str(local)
+    system = {"win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux")
+    url = f"https://dl.google.com/android/repository/platform-tools-latest-{system}.zip"
+    say("adb non trovato: scarico Android platform-tools da Google (una volta sola)...")
+    try:
+        STATE_DIR.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "pt.zip"
+            with urllib.request.urlopen(url, timeout=120) as r, open(archive, "wb") as f:
+                shutil.copyfileobj(r, f)
+            with zipfile.ZipFile(archive) as z:
+                z.extractall(STATE_DIR)
+    except Exception as e:
+        die(f"Non riesco a scaricare adb ({e}). Installa 'Android platform-tools' a mano e riprova.")
+    if os.name != "nt":
+        for tool in (STATE_DIR / "platform-tools").iterdir():
+            tool.chmod(tool.stat().st_mode | 0o111)
+    return str(local)
+
+
+def state_of(serial):
+    return adb("-s", serial, "get-state").strip()
+
+
+def wait_authorized(serial, seconds=180):
+    """Aspetta che sulla TV si accetti 'Consenti debug USB?'."""
+    if state_of(serial) == "device":
+        return
+    say("Sulla TV compare 'Consenti debug USB?': scegli 'Consenti sempre da questo computer' e premi OK.")
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if state_of(serial) == "device":
+            return
+        time.sleep(3)
+    die("Non hai accettato 'Consenti debug USB?' sulla TV: riprova.")
+
+
+def is_amazon(serial):
+    return adb("-s", serial, "shell", "getprop", "ro.product.manufacturer").strip().lower() == "amazon"
+
+
+def usb_devices():
+    rows = [line.split() for line in adb("devices").splitlines()[1:] if line.strip()]
+    return [r[0] for r in rows if ":" not in r[0] and len(r) > 1 and r[1] in ("device", "unauthorized")]
+
+
+def local_prefix():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # nessun pacchetto parte: serve solo a sapere quale rete si usa
+        ip = s.getsockname()[0]
+    except OSError:
+        ip = socket.gethostbyname(socket.gethostname())
+    finally:
+        s.close()
+    return ".".join(ip.split(".")[:3])
+
+
+def scan_network():
+    """Indirizzi della rete locale con la porta ADB (5555) aperta."""
+    prefix = local_prefix()
+
+    def probe(host):
+        try:
+            with socket.create_connection((host, 5555), timeout=0.6):
+                return host
+        except OSError:
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(64) as pool:
+        return [h for h in pool.map(probe, [f"{prefix}.{i}" for i in range(1, 255)]) if h]
+
+
 def connect(target):
-    if shutil.which("adb") is None:
-        die("adb non trovato: installa 'Android platform-tools' (vedi README) e riprova.")
+    """Restituisce il numero di serie adb della Fire Stick."""
     if target == "usb":
-        rows = [line.split() for line in adb("devices").splitlines()[1:] if line.strip()]
-        usb = [r for r in rows if ":" not in r[0]]  # i dispositivi di rete hanno la forma IP:porta
-        ready = [r[0] for r in usb if r[1] == "device"]
-        if ready:
-            return ready[0]
-        if any(r[1] == "unauthorized" for r in usb):
-            die("Accetta 'Consenti debug USB?' sulla TV (spunta 'Consenti sempre') e riprova.")
-        die("Nessuna Fire Stick via USB: controlla il cavo e il Debug ADB. Su Windows servono i driver: se non va, usa il Wi-Fi.")
-    serial = target if ":" in target else f"{target}:5555"
-    out = adb("connect", serial)
-    if "connected" not in out:
-        die(f"Connessione a {serial} fallita: {out.strip()}")
-    if adb("-s", serial, "get-state").strip() != "device":
-        die("Accetta 'Consenti debug USB?' sulla TV (spunta 'Consenti sempre') e riprova.")
-    return serial
+        found = usb_devices()
+        if not found:
+            die("Nessuna Fire Stick via USB: controlla il cavo e il Debug ADB. Su Windows servono i driver: se non va, usa il Wi-Fi.")
+        wait_authorized(found[0])
+        return found[0]
+    if target != "auto":
+        serial = target if ":" in target else f"{target}:5555"
+        if "connected" not in adb("connect", serial):
+            die(f"Connessione a {serial} fallita: Debug ADB acceso? IP giusto?")
+        wait_authorized(serial)
+        return serial
+
+    say("Cerco la Fire Stick...")
+    for serial in usb_devices():
+        wait_authorized(serial)
+        if is_amazon(serial):
+            return serial
+    for host in scan_network():
+        serial = f"{host}:5555"
+        if "connected" in adb("connect", serial):
+            wait_authorized(serial)
+            if is_amazon(serial):
+                return serial
+    say("Non ho trovato nessuna Fire Stick da sola. Sulla Fire Stick: Impostazioni > My Fire TV > Opzioni sviluppatore > Debug ADB = ON,")
+    say("e l'IP è in Impostazioni > My Fire TV > Info > Rete.")
+    if not sys.stdin.isatty():
+        die("Rilancia con l'IP della Fire Stick come ultimo argomento.")
+    ip = input("IP della Fire Stick: ").strip()
+    return connect(ip)
 
 
 class Tv:
     def __init__(self, serial):
         self.serial = serial
 
-    def sh(self, *cmd):
-        return adb("-s", self.serial, "shell", *cmd)
+    def sh(self, *cmd, timeout=60):
+        return adb("-s", self.serial, "shell", *cmd, timeout=timeout)
+
+    def prop(self, name):
+        return self.sh("getprop", name).strip()
 
     def packages(self, flag):
         """Nomi dei pacchetti attivi (-e) o disattivati (-d) per l'utente 0."""
@@ -93,8 +237,17 @@ class Tv:
         out = self.sh("cmd", "package", "query-activities", "--brief", *query)
         return set(re.findall(r"^\s*([A-Za-z0-9_.]+)/", out, re.M))
 
+    def setting(self, namespace, key):
+        value = self.sh("settings", "get", namespace, key).strip()
+        return None if value == "null" else value
 
-# --- elenchi ---------------------------------------------------------------
+    def focus(self):
+        out = self.sh("dumpsys", "window")
+        m = re.search(r"mCurrentFocus=.*? (\S+)/(\S+?)\}?$", out, re.M)
+        return f"{m.group(1)}/{m.group(2)}" if m else ""
+
+
+# --- elenchi e registro -----------------------------------------------------
 
 def load_sections():
     sections, current = {}, None
@@ -126,37 +279,36 @@ def wanted(sections, stick, extras):
     return list(dict.fromkeys(p for name in names for p in sections.get(name, [])))
 
 
-# --- registro dello stato prima della pulizia ------------------------------
-
 def record_path(serial):
     return STATE_DIR / (re.sub(r"[^A-Za-z0-9_.-]", "_", serial) + ".json")
 
 
 def load_record(serial):
+    """Il registro dello stato PRIMA della pulizia (None se non esiste). Una seconda esecuzione non lo sovrascrive."""
     path = record_path(serial)
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text())
+        record = json.loads(path.read_text())
     except ValueError:
         die(f"Il registro {path} è rovinato: non lo sovrascrivo. Controllalo o spostalo.")
-
-
-def save_record(serial, pkgs, enabled, disabled):
-    """Scrive com'erano i pacchetti PRIMA di toccarli. Una seconda esecuzione non sovrascrive la prima."""
-    record = load_record(serial) or {"before": {}, "refused": []}
-    for p in pkgs:
-        state = "enabled" if p in enabled else "disabled" if p in disabled else "absent"
-        if record["before"].get(p, "absent") == "absent":
-            record["before"][p] = state  # un pacchetto assente allora e attivo ora si ripristina come attivo
-    STATE_DIR.mkdir(exist_ok=True)
-    record_path(serial).write_text(json.dumps(record, indent=1, sort_keys=True))
+    for key, empty in (("before", {}), ("refused", []), ("settings", {}), ("appops", []), ("home", {})):
+        record.setdefault(key, empty)  # i registri di versioni precedenti non hanno tutte le chiavi
     return record
 
 
-# --- comandi ---------------------------------------------------------------
+def new_record(serial):
+    return load_record(serial) or {"before": {}, "refused": [], "settings": {}, "appops": [], "home": {}}
 
-def clean(tv, pkgs, stick, keep):
+
+def save_record(serial, record):
+    STATE_DIR.mkdir(exist_ok=True)
+    record_path(serial).write_text(json.dumps(record, indent=1, sort_keys=True))
+
+
+# --- 1. pacchetti -----------------------------------------------------------
+
+def clean_packages(tv, record, pkgs, stick, keep):
     enabled, disabled = tv.packages("-e"), tv.packages("-d")
     if not enabled:
         die("La Fire Stick non ha elencato nessun pacchetto: riprova.")
@@ -173,10 +325,14 @@ def clean(tv, pkgs, stick, keep):
         elif p in settings:
             skipped[p] = "apre le Impostazioni"
         elif p in inputs:
-            skipped[p] = "gestisce gli ingressi TV (su una Fire Stick usa --stick)"
+            skipped[p] = "gestisce gli ingressi TV (su una Fire Stick non usare --tv)"
 
     todo = [p for p in pkgs if p in enabled and p not in skipped]
-    save_record(tv.serial, pkgs, enabled, disabled)  # prima di cambiare qualsiasi cosa
+    for p in pkgs:  # com'era ognuno PRIMA di toccarlo
+        state = "enabled" if p in enabled else "disabled" if p in disabled else "absent"
+        if record["before"].get(p, "absent") == "absent":
+            record["before"][p] = state  # assente allora e attivo ora: si ripristina come attivo
+    save_record(tv.serial, record)
 
     for i in range(0, len(todo), BATCH):
         batch = todo[i:i + BATCH]
@@ -191,88 +347,334 @@ def clean(tv, pkgs, stick, keep):
     still_on = tv.packages("-e")
     refused = [p for p in todo if p in still_on]
     done = [p for p in todo if p not in still_on]
-    record = load_record(tv.serial)
-    record["refused"] = sorted(set(record.get("refused", [])) | set(refused))
-    record_path(tv.serial).write_text(json.dumps(record, indent=1, sort_keys=True))
+    record["refused"] = sorted(set(record["refused"]) | set(refused))
+    save_record(tv.serial, record)
 
-    print(f"Disattivati: {len(done)}")
-    for p in done:
-        print(f"  {p}")
-    print(f"Assenti su questa Fire Stick o già disattivati: {len([p for p in pkgs if p not in todo and p not in skipped])}")
+    say(f"  disattivati: {len(done)}")
     for p, why in skipped.items():
-        print(f"Saltato {p}: {why}")
+        say(f"  saltato {p}: {why}")
+    say(f"  assenti su questa Fire Stick o già disattivati: {len([p for p in pkgs if p not in todo and p not in skipped])}")
     if refused:
-        print(f"Rifiutati da Fire OS ({len(refused)}), pacchetti protetti: è normale.")
-        for p in refused:
-            print(f"  {p}")
+        say(f"  rifiutati da Fire OS ({len(refused)}), pacchetti protetti: è normale; li silenzio al passo successivo")
     if todo and not done:
         die("Fire OS ha rifiutato tutto: questo firmware (es. Fire OS 5) non permette di disattivare i pacchetti.", 1)
-    write_report(tv, wanted(load_sections(), True, True), keep)
-    if tv.sh("getprop", "ro.adb.secure").strip() == "0":
-        print("Attenzione: questa Fire Stick accetta ADB da qualunque dispositivo in rete. Quando hai finito esegui 'adb-off'.")
+    return refused
 
 
-def write_report(tv, known, keep):
+# --- 2. pacchetti protetti: niente esecuzione in background ------------------
+
+def silence_protected(tv, record, sdk, protected, refused, keep):
+    ops = ["RUN_IN_BACKGROUND"] + (["RUN_ANY_IN_BACKGROUND"] if sdk >= 28 else [])
+    installed = tv.packages("-e")
+    done = []
+    for p in dict.fromkeys(list(protected) + list(refused)):
+        if p not in installed or is_kept(p, keep):
+            continue
+        for op in ops:
+            tv.sh("appops", "set", p, op, "ignore")
+        done.append(p)
+    record["appops"] = sorted(set(record["appops"]) | set(done))
+    save_record(tv.serial, record)
+    say(f"  silenziati in background: {len(done)}")
+
+
+# --- 3. impostazioni su pubblicità e privacy --------------------------------
+
+def apply_settings(tv, record, sdk):
+    items = PRIVACY + (ANIMATIONS if sdk <= 28 else [])
+    changed = 0
+    for namespace, key, value in items:
+        slot = f"{namespace} {key}"
+        if slot not in record["settings"]:
+            record["settings"][slot] = tv.setting(namespace, key)  # null = non esisteva
+        tv.sh("settings", "put", namespace, key, value)
+        changed += tv.setting(namespace, key) == value
+    save_record(tv.serial, record)
+    say(f"  impostazioni applicate e confermate: {changed} su {len(items)}")
+    if changed < len(items):
+        say("  (Fire OS ne riscrive alcune: controlla Impostazioni > Preferenze > Impostazioni sulla privacy)")
+
+
+# --- 4. FireHome come Home ---------------------------------------------------
+
+def find_apk(given):
+    """FireHome.apk: quello indicato, uno locale, oppure l'ultima versione pubblicata su GitHub."""
+    candidates = [Path(given)] if given else [
+        HERE.parent / "FireHome.apk",
+        HERE.parent / "app/build/outputs/apk/release/app-release.apk",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    if given:
+        die(f"File non trovato: {given}")
+    STATE_DIR.mkdir(exist_ok=True)
+    apk = STATE_DIR / "FireHome.apk"
+    say("  scarico FireHome dall'ultima versione pubblicata...")
+    try:
+        with urllib.request.urlopen(APK_URL, timeout=120) as r, open(apk, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except Exception as e:
+        say(f"  FireHome non è ancora scaricabile ({e}): salto l'installazione dell'app.")
+        return None
+    try:
+        with urllib.request.urlopen(APK_URL + ".sha256", timeout=30) as r:
+            expected = r.read().decode().split()[0].lower()
+    except Exception:
+        say("  attenzione: manca il file di controllo SHA-256, non posso verificare il download.")
+        return apk
+    if hashlib.sha256(apk.read_bytes()).hexdigest() != expected:
+        apk.unlink()
+        die("Il file scaricato non corrisponde al controllo SHA-256: non lo installo.")
+    say("  controllo SHA-256 riuscito")
+    return apk
+
+
+def put_secure(tv, key, value):
+    """settings put secure, con ripiego sul content provider (su alcune versioni 'settings' scarta in silenzio)."""
+    tv.sh("settings", "put", "secure", key, value or '""')
+    if (tv.setting("secure", key) or "") != value:
+        tv.sh("content", "insert", "--uri", "content://settings/secure",
+              "--bind", f"name:s:{key}", "--bind", f"value:s:{value}")
+
+
+def guard_bound(dump, user):
+    """True/False se il servizio è tra quelli attivi dell'utente; None se il formato non si riconosce."""
+    current, inside, found, seen = None, False, False, False
+    for line in dump.splitlines():
+        if "User state[" in line:
+            current, inside = None, False
+        m = re.search(r"attributes:\{id=(\d+)[,}]", line)
+        if m:
+            current = m.group(1)
+        if current == user and re.match(r"^\s*(Bound services|services):\s*\{", line):
+            inside = True
+            line = line.split("{", 1)[1]
+        if inside:
+            if f"Service[label={GUARD_LABEL}," in line:
+                found = True
+            if "}" in line:
+                seen, inside = True, False
+    return found if seen else None
+
+
+def set_guard(tv, record, on):
+    """Accende o spegne il servizio Home, lasciando intatti gli altri servizi di accessibilità."""
+    home = record["home"]
+    current = tv.setting("secure", "enabled_accessibility_services") or ""
+    home.setdefault("a11y_before", current)
+    home.setdefault("a11y_enabled_before", tv.setting("secure", "accessibility_enabled") or "0")
+    others = [c for c in current.split(":") if c and c not in (GUARD, f"{APP_ID}/.HomeGuard")]
+    put_secure(tv, "enabled_accessibility_services", "")  # azzerare prima fa riagganciare un servizio morto
+    time.sleep(1)
+    if on:
+        put_secure(tv, "enabled_accessibility_services", ":".join(others + [GUARD]))
+        put_secure(tv, "accessibility_enabled", "1")
+    else:
+        put_secure(tv, "enabled_accessibility_services", ":".join(others))
+        put_secure(tv, "accessibility_enabled", "1" if others else "0")
+    save_record(tv.serial, record)
+
+
+def set_futurity(tv, record, on):
+    """min_futurity=0: l'allarme parte subito e il lancio di FireHome non aspetta 5 secondi dopo Home."""
+    home = record["home"]
+    current = tv.setting("global", "alarm_manager_constants") or ""
+    if on:
+        home.setdefault("futurity_before", current)
+    base = current if on else home.get("futurity_before", current)
+    parts = [x for x in base.split(",") if x and not x.startswith("min_futurity=")]
+    if on:
+        parts.append("min_futurity=0")
+    if parts:
+        tv.sh("settings", "put", "global", "alarm_manager_constants", ",".join(parts))
+    else:
+        tv.sh("settings", "delete", "global", "alarm_manager_constants")
+    save_record(tv.serial, record)
+
+
+def install_home(tv, record, sdk, apk_arg):
+    if sdk < 28:
+        say("  Fire OS 6 o precedente: questo metodo non può prendere la Home. Salto.")
+        return False
+    if sdk >= 31:
+        say("  Android 12 o successivo: questo metodo non è stato provato. Salto.")
+        return False
+    apk = find_apk(apk_arg)
+    if apk is None:
+        return False
+    out = adb("-s", tv.serial, "install", "-r", str(apk), timeout=240)
+    if "Success" not in out:
+        say(f"  installazione di FireHome non riuscita: {out.strip().splitlines()[-1] if out.strip() else 'nessuna risposta'}")
+        return False
+    say("  FireHome installata")
+    tv.sh("dumpsys", "deviceidle", "whitelist", f"+{APP_ID}")
+    set_futurity(tv, record, True)
+    set_guard(tv, record, True)
+
+    user = tv.sh("am", "get-current-user").strip() or "0"
+    bound = None
+    for _ in range(15):
+        bound = guard_bound(tv.sh("dumpsys", "accessibility"), user)
+        if bound:
+            break
+        time.sleep(1)
+    if bound is False:
+        set_futurity(tv, record, False)
+        set_guard(tv, record, False)
+        say("  Fire OS non ha attivato il servizio Home: FireHome resta una normale app (in 'Le tue app').")
+        return False
+
+    # Prova vera: si porta in primo piano la Home di Amazon e si guarda se FireHome la sostituisce.
+    tv.sh("input", "keyevent", "KEYCODE_WAKEUP")
+    tv.sh("am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME", "-p", "com.amazon.tv.launcher")
+    for _ in range(8):
+        time.sleep(1)
+        if tv.focus().startswith(APP_ID):
+            say("  prova superata: premendo Home si apre FireHome")
+            return True
+    say("  il servizio è attivo ma la prova non ha mostrato FireHome in primo piano: premi Home sul telecomando per controllare.")
+    return True
+
+
+def undo_home(tv, record):
+    home = record["home"]
+    tv.sh("am", "force-stop", APP_ID)
+    if "futurity_before" in home:
+        set_futurity(tv, record, False)
+    if "a11y_before" in home:
+        set_guard(tv, record, False)
+        before = home["a11y_before"]
+        put_secure(tv, "enabled_accessibility_services", before)
+        put_secure(tv, "accessibility_enabled", home.get("a11y_enabled_before", "0"))
+    tv.sh("dumpsys", "deviceidle", "whitelist", f"-{APP_ID}")
+    tv.sh("am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME")
+
+
+# --- comandi ----------------------------------------------------------------
+
+def write_report(tv, known, keep, extra=None):
     """Elenca i pacchetti Amazon ancora attivi che né l'elenco né [keep] conoscono, da rivedere con calma."""
     rest = sorted(p for p in tv.packages("-e")
                   if p.startswith("com.amazon.") and p not in known and not is_kept(p, keep))
-    REPORT.write_text("Pacchetti Amazon ancora attivi, non presenti nell'elenco:\n" + "\n".join(rest) + "\n")
-    print(f"Report: {REPORT} (pacchetti Amazon ancora attivi e sconosciuti: {len(rest)})")
+    lines = ["Pacchetti Amazon ancora attivi e non presenti nell'elenco:"] + rest + (extra or [])
+    REPORT.write_text("\n".join(lines) + "\n")
+    say(f"  report: {REPORT} (pacchetti Amazon ancora attivi e sconosciuti: {len(rest)})")
 
 
-def check(tv, pkgs):
+def preflight(tv):
+    manufacturer = tv.prop("ro.product.manufacturer")
+    if manufacturer.lower() != "amazon":
+        die(f"Questa non sembra una Fire Stick (produttore: {manufacturer or 'sconosciuto'}).")
+    sdk_text = tv.prop("ro.build.version.sdk")
+    sdk = int(sdk_text) if sdk_text.isdigit() else 28
+    say(f"Trovata: {tv.prop('ro.product.model')} - Android {tv.prop('ro.build.version.release')} (sdk {sdk}) - build {tv.prop('ro.build.display.id')}")
+    return sdk
+
+
+def run_clean(tv, sections, args, sdk):
+    keep = sections.get("keep", [])
+    record = new_record(tv.serial)
+    say("[1/3] App Amazon inutili (telemetria, pubblicità, shopping)")
+    refused = clean_packages(tv, record, wanted(sections, not args.tv, args.extras), not args.tv, keep)
+    say("[2/3] Pacchetti protetti: niente esecuzione in background")
+    silence_protected(tv, record, sdk, sections.get("protected", []), refused, keep)
+    say("[3/3] Impostazioni su pubblicità e dati")
+    apply_settings(tv, record, sdk)
+    write_report(tv, wanted(sections, True, True), keep)
+    if tv.prop("ro.adb.secure") == "0":
+        say("Attenzione: questa Fire Stick accetta ADB da qualunque dispositivo in rete. Quando hai finito esegui 'adb-off'.")
+
+
+def run_home(tv, sections, args, sdk):
+    record = new_record(tv.serial)
+    say("FireHome come schermata Home")
+    return install_home(tv, record, sdk, args.apk)
+
+
+def run_check(tv, sections, args):
     record = load_record(tv.serial)
     if record is None:
-        print("Non hai ancora eseguito 'clean' su questa Fire Stick: non c'è niente da confrontare.")
+        say("Non hai ancora eseguito la pulizia su questa Fire Stick: non c'è niente da confrontare.")
         return 2
-    ignore = set(record["refused"])
-    back = [p for p in pkgs if p in tv.packages("-e") and p not in ignore]
-    if not back:
-        print("Tutto a posto: nessun pacchetto è stato riattivato.")
+    enabled = tv.packages("-e")
+    back = [p for p in wanted(sections, not args.tv, args.extras) if p in enabled and p not in set(record["refused"])]
+    problems = []
+    if record["home"].get("a11y_before") is not None and GUARD not in (tv.setting("secure", "enabled_accessibility_services") or ""):
+        problems.append("il servizio Home di FireHome è stato spento")
+    if back:
+        problems.append(f"pacchetti riattivati da Amazon: {len(back)}")
+    if not problems:
+        say("Tutto a posto: nessun pacchetto riattivato e la Home è ancora FireHome.")
         return 0
-    print(f"Riattivati da Amazon ({len(back)}): esegui di nuovo 'clean'.")
+    say("Da sistemare: " + "; ".join(problems) + ". Esegui di nuovo il comando principale.")
     for p in back:
-        print(f"  {p}")
+        say(f"  {p}")
     return 1
 
 
-def restore(tv):
-    disabled = tv.packages("-d")
+def run_restore(tv, sections):
     record = load_record(tv.serial)
-    if record:
-        targets = [p for p, state in record["before"].items() if state == "enabled"]
-    else:
-        print("Nessun registro per questa Fire Stick: riattivo tutto l'elenco.")
-        targets = wanted(load_sections(), True, True)
-    targets = [p for p in targets if p in disabled]
+    if not record:
+        say("Nessun registro per questa Fire Stick: riattivo tutto l'elenco.")
+        record = new_record(tv.serial)
+        record["before"] = {p: "enabled" for p in wanted(sections, True, True)}
+    undo_home(tv, record)
+    for slot, old in record["settings"].items():
+        namespace, key = slot.split(" ", 1)
+        if old is None:
+            tv.sh("settings", "delete", namespace, key)
+        else:
+            tv.sh("settings", "put", namespace, key, old)
+    for p in record["appops"]:
+        for op in ("RUN_IN_BACKGROUND", "RUN_ANY_IN_BACKGROUND"):
+            tv.sh("appops", "set", p, op, "default")
+    disabled = tv.packages("-d")
+    targets = [p for p, state in record["before"].items() if state == "enabled" and p in disabled]
     for p in targets:
         tv.sh("pm", "enable", "--user", "0", p)
     left = [p for p in targets if p in tv.packages("-d")]
-    print(f"Riattivati: {len(targets) - len(left)}")
+    say(f"Ripristinato: {len(targets) - len(left)} pacchetti, {len(record['settings'])} impostazioni, Home Amazon.")
     for p in left:
-        print(f"  non riattivato: {p}")
+        say(f"  non riattivato: {p}")
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):  # la console di Windows può non reggere le lettere accentate
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["clean", "check", "restore", "adb-off"])
-    parser.add_argument("target", help="'usb' (cavo micro-USB) oppure l'IP della Fire Stick")
-    parser.add_argument("--stick", action="store_true", help="è una Fire Stick (non una TV Fire Edition): toglie anche la scheda Live")
+    parser.add_argument("command", nargs="?", default="all", help="all (predefinito), clean, home, check, restore, adb-off")
+    parser.add_argument("target", nargs="?", default="auto", help="'usb', un IP, oppure niente per cercarla da solo")
+    parser.add_argument("--tv", action="store_true", help="è una TV con Fire OS integrato, non una Fire Stick: non toglie la scheda Live")
     parser.add_argument("--extras", action="store_true", help="toglie anche Alexa extra (timer, multi-room), Silk e Ambient")
+    parser.add_argument("--no-home", action="store_true", help="non installare FireHome e non prendere la Home")
+    parser.add_argument("--apk", help="usa questo FireHome.apk invece di scaricare l'ultimo")
+    parser.add_argument("--reboot", action="store_true", help="riavvia la Fire Stick alla fine")
     args = parser.parse_args()
+    if args.command not in COMMANDS:  # 'firestick.py 192.168.1.50' = comando predefinito su quell'IP
+        args.command, args.target = "all", args.command
 
+    global ADB
+    ADB = find_adb()
     tv = Tv(connect(args.target))
+    sdk = preflight(tv)
     sections = load_sections()
-    pkgs = wanted(sections, args.stick, args.extras)
-    if args.command == "clean":
-        clean(tv, pkgs, args.stick, sections.get("keep", []))
-    elif args.command == "check":
-        sys.exit(check(tv, pkgs))
-    elif args.command == "restore":
-        restore(tv)
-    else:
+
+    if args.command in ("all", "clean"):
+        run_clean(tv, sections, args, sdk)
+    if args.command == "home" or (args.command == "all" and not args.no_home):
+        run_home(tv, sections, args, sdk)
+    if args.command == "check":
+        sys.exit(run_check(tv, sections, args))
+    if args.command == "restore":
+        run_restore(tv, sections)
+    if args.command == "adb-off":
         tv.sh("settings", "put", "global", "adb_enabled", "0")
-        print("Debug ADB spento. Per riaccenderlo: Impostazioni > My Fire TV > Opzioni sviluppatore.")
+        say("Debug ADB spento. Per riaccenderlo: Impostazioni > My Fire TV > Opzioni sviluppatore.")
+    if args.command in ("all", "clean", "home"):
+        say("\nFatto. Per tornare indietro: python3 scripts/firestick.py restore")
+        if args.reboot:
+            tv.sh("svc", "power", "reboot")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 # Pacchetti Amazon da DISATTIVARE su una Fire Stick (solo per l'utente 0: niente viene disinstallato).
 #
-# Fonte: elenchi provati su Fire Stick reali (4K 2018, Lite 2020, 4K Max 2021, 4K 2023) del progetto
-# Gathin23/cleanyourtv, licenza MIT: https://github.com/Gathin23/cleanyourtv
+# Fonti (entrambe licenza MIT), elenchi provati su Fire Stick reali, compresa la build 7.7.1.7 (PS7717/5741):
+#   Gathin23/cleanyourtv  https://github.com/Gathin23/cleanyourtv
+#   humblemuzzu/dumbtv    https://github.com/humblemuzzu/dumbtv
 # Un nome che non esiste sul tuo modello viene semplicemente saltato.
 # Per tenere un'app, metti un # davanti alla riga.
 #
@@ -44,6 +45,12 @@ com.amazon.privacypassservice
 com.amazon.wifilocker                      # invia a Amazon le password Wi-Fi
 com.amazon.tv.acr                          # riconoscimento automatico dei contenuti
 com.amazon.ftvspatial                      # rilevamento di presenza e posizione
+com.amazon.connectivitydiag
+
+# Esperimenti e configurazione remota
+com.amazon.ale
+com.amazon.katoch
+com.amazon.device_remote_config_sync_service
 
 # Pubblicità, promozioni, shopping, suggerimenti
 com.amazon.kso.blackbird                   # sincronizza gli annunci della Home
@@ -55,6 +62,7 @@ com.amazon.tv.easyupgrade                  # promo "passa a un Fire TV nuovo"
 com.amazon.shoptv.client                   # Amazon Shopping
 com.amazon.shoptv.firetv.client
 com.amazon.gamehub                         # Luna / giochi
+com.amazon.spiderpork                      # Amazon Luna (cloud gaming)
 com.amazon.systemnotices
 com.amazon.tv.releasenotes                 # note di rilascio
 com.amazon.uxnotification
@@ -76,6 +84,16 @@ com.amazon.whisperjoin.wss.wifiprovisioner
 com.amazon.tv.ffsprovisioneeclient
 com.amazon.ods.kindleconnect               # "mostra su Fire TV" da Echo e tablet Fire
 com.amazon.naatyam
+com.amazon.tv.democontent.provider         # contenuti dimostrativi
+com.amazon.dummy.alarmclock                # finte app segnaposto
+com.amazon.dummy.calendar
+com.amazon.dummy.contacts
+com.amazon.dummy.gallery
+com.amazon.dummy.music
+com.amazon.dummy.settings
+com.android.traceur                        # strumento di tracciamento
+com.android.printspooler                   # stampa (una Fire Stick non stampa)
+com.android.bips
 
 # App di streaming preinstallate in altri mercati (saltate se assenti)
 com.adultswim.firetv
@@ -99,6 +117,7 @@ tv.pluto.android
 com.amazon.tv.livetv
 com.amazon.franktvinput
 com.amazon.hedwig                          # Fire TV Channels
+com.amazon.tv.localgallery                 # foto e video da USB (una Fire Stick non ha la porta)
 
 [extras]
 # Opzionali. Alexa oltre alla ricerca vocale (sveglie, timer, musica, audio multi-room, casa smart).
@@ -122,6 +141,20 @@ com.amazon.tv.mattercohost
 com.amazon.cloud9
 com.amazon.tv.website_launcher
 com.amazon.tv.ftvambient
+
+[protected]
+# Fire OS rifiuta di disattivarli: gli si toglie solo l'esecuzione in background (appops).
+# Si applica a quelli presenti e a tutto ciò che Fire OS rifiuta durante 'clean'.
+com.amazon.device.metrics
+com.amazon.device.crashmanager
+com.amazon.device.logmanager
+com.amazon.device.rdmapplication
+com.amazon.ftvads.deeplinking
+com.amazon.tv.csapp
+com.amazon.diode
+com.fireos.usagestats.proxy
+com.amazon.client.metrics
+com.amazon.minerva.client.api
 
 [keep]
 # Prefissi: ciò che coincide o inizia così (es. com.amazon.tv.settings -> com.amazon.tv.settings.v2)

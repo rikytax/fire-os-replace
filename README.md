@@ -1,125 +1,106 @@
 # FireHome
 
-Due strumenti per togliere il superfluo da una Fire TV Stick:
+Toglie pubblicità, telemetria e app inutili da una Fire TV Stick e ne sostituisce la schermata Home con una veloce e pulita: orologio, **TV Live**, le tue app, **Duplica schermo**. Alexa continua a funzionare.
 
-1. **La pulizia** (`scripts/firestick.py`): un comando che disattiva telemetria, pubblicità, shopping e app inutili di Amazon, lasciando Alexa, Prime Video, duplica schermo e le tue app. È la parte che funziona davvero su Fire OS.
-2. **FireHome** (l'app): un hub leggero con TV Live, le tue app, Duplica schermo e Impostazioni. È un'**app**, non la Home di sistema.
+Pensato per la **Fire TV Stick 3ª gen (Fire OS 7.7.1.7, build PS7717/5741)**. Per questa stessa build altri hanno già completato l'intero procedimento su tre Fire Stick ([dumbtv](https://github.com/humblemuzzu/dumbtv/blob/main/catalog/devices/fireos-amazon-aftss.yaml)).
 
-> **Cosa non si può fare.** Né sostituire l'OS (bootloader bloccato) né sostituire la Home: Fire OS la riserva al launcher Amazon, che è un pacchetto *protetto*. Lo hanno provato su Fire Stick reali: `set-home-activity` risponde "Success" e il tasto Home porta comunque ad Amazon; `pm disable-user` sul launcher è rifiutato (`Cannot disable a protected package`) ([dettagli](https://github.com/Gathin23/cleanyourtv/blob/main/docs/TROUBLESHOOTING.md#fire-tv-fire-os-debloat-works-the-launcher-cannot-take-home)). Non funziona sui modelli nuovi con **Vega OS** (non Android).
+> **Non è un sistema operativo nuovo.** Il bootloader delle Fire Stick è bloccato da Amazon: l'OS resta Fire OS. FireHome sostituisce la Home (con un trucco, spiegato sotto), non il sistema. Non funziona sui modelli nuovi con **Vega OS** (non Android).
 
-## 1. Pulire la Fire Stick
+## Come si usa
 
-### Prima, una volta sola
+1. **Sulla Fire Stick:** *Impostazioni → My Fire TV → Opzioni sviluppatore → Debug ADB* = ON. Se *Opzioni sviluppatore* manca: *Info*, premi OK sul nome del dispositivo 7 volte. Collega la Fire Stick al Wi-Fi di casa (o al computer con il cavo micro-USB).
+2. **Sul computer:** scarica questa cartella e fai **doppio clic** su:
+   - Windows: `PULISCI-FIRESTICK.bat` (se manca Python lo installa da solo)
+   - Mac: `pulisci-firestick.command` (se non si apre: tasto destro → *Apri*)
+   - Linux: `./pulisci-firestick.sh`
+3. **Sulla TV:** la prima volta compare *Consenti debug USB?*: scegli *Consenti sempre da questo computer* e premi OK. Il resto è automatico.
 
-- Sulla Fire Stick: *Impostazioni → My Fire TV → Opzioni sviluppatore → Debug ADB* = ON. Se *Opzioni sviluppatore* manca: *Info*, premi OK sul nome del dispositivo 7 volte.
-- Sul computer servono **Python 3** e **adb** ([Android platform-tools](https://developer.android.com/tools/releases/platform-tools), si scompatta e basta).
-- Collega la Fire Stick: **via Wi-Fi** (consigliato) con l'IP che trovi in *Info → Rete*, oppure **via USB** con il cavo micro-USB al PC. L'USB funziona, ma su Windows spesso servono driver aggiuntivi.
-- La prima volta accetta "Consenti debug USB?" sulla TV e spunta "Consenti sempre".
+Lo script trova da solo la Fire Stick (USB o rete), scarica `adb` se manca e fa tutto senza domande. Se non la trova chiede l'IP (*Impostazioni → My Fire TV → Info → Rete*).
 
-### Il comando
+## Cosa fa, in ordine
+
+| Passo | Cosa |
+|---|---|
+| 1. App Amazon inutili | Disattiva (non disinstalla) telemetria, pubblicità, ACR, shopping, Luna, tutorial, app dimostrative, Freevee, Amazon Music e Photos, scheda Live. |
+| 2. Pacchetti protetti | Quelli che Fire OS non lascia disattivare restano, ma perdono l'esecuzione in background. |
+| 3. Impostazioni | Spegne ad tracking, pubblicità basata sugli interessi, invio dati d'uso, video in anteprima nella Home; animazioni più rapide. |
+| 4. FireHome come Home | Scarica l'ultima FireHome, la installa, attiva il servizio Home e **prova davvero** premendo Home: se FireHome si apre, lo dice. |
+| 5. Report | `fire-report.txt` con i pacchetti Amazon ancora attivi che l'elenco non conosce. |
+
+**Protezioni:** non tocca mai la Home Amazon, le Impostazioni, i pacchetti di base di Android, né Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, Rai, Mediaset, La7. L'elenco `[keep]` in `scripts/firestick-bloat.txt` protegge anche Alexa, Appstore, tastiera, aggiornamenti e **duplica schermo / casting**. Lavora a gruppi di 8 e, se dopo un gruppo la Home non risponde più, lo rimette a posto e si ferma. Scrive prima com'era ogni cosa in `~/.firestick-clean/`.
+
+### Altri comandi
 
 ```bash
-python3 scripts/firestick.py clean 192.168.1.50 --stick     # via Wi-Fi
-python3 scripts/firestick.py clean usb --stick              # via cavo USB
+python3 scripts/firestick.py check      # dopo un aggiornamento: cosa ha riattivato Amazon?
+python3 scripts/firestick.py            # lo stesso comando rimette a posto
+python3 scripts/firestick.py restore    # torna a com'era prima (pacchetti, impostazioni, Home Amazon)
+python3 scripts/firestick.py adb-off    # spegne il Debug ADB a lavoro finito
 ```
 
-(Su Windows: `py scripts\firestick.py ...`.) Non fa domande. `--stick` serve perché una Fire Stick non ha sintonizzatore né ingressi HDMI, quindi si può togliere anche la scheda "Live" di Amazon; **su una TV con Fire OS integrato non usarlo**.
+Opzioni: `--extras` (toglie anche Alexa oltre alla ricerca vocale: timer, multi-room, Silk, Ambient), `--no-home` (solo pulizia), `--apk FILE`, `--reboot`, `--tv` (per una TV con Fire OS integrato, non una Fire Stick). Su Windows: `py scripts\firestick.py ...`.
 
-| Opzione | Cosa fa |
-|---|---|
-| `clean` | Disattiva i pacchetti dell'elenco e scrive `fire-report.txt` con gli altri pacchetti Amazon che restano, da guardare con calma. |
-| `check` | Dice cosa Amazon ha riattivato (per esempio dopo un aggiornamento). Esce con 1 se qualcosa è tornato. |
-| `restore` | Rimette tutto com'era **prima** di `clean`. |
-| `adb-off` | Spegne il Debug ADB e chiude la porta di rete 5555. Fallo a lavoro finito. |
-| `--extras` | Toglie anche Alexa oltre alla ricerca vocale (timer, musica, multi-room), Silk e Ambient. |
+## Come FireHome prende la Home
 
-### Come funziona (e perché è prudente)
+Su Fire OS il launcher Amazon è un pacchetto protetto: `set-home-activity` risponde "Success" e non cambia nulla, e il tasto Home non si può intercettare. Il trucco, preso da [dumbtv](https://github.com/humblemuzzu/dumbtv) (MIT):
 
-- **Disattiva, non disinstalla** (`pm disable-user --user 0`): tutto è reversibile.
-- **Registro prima di toccare:** scrive in `~/.firestick-clean/` com'era ogni pacchetto. `restore` lo rilegge: ciò che avevi già disattivato tu resta disattivato. Una seconda esecuzione non sovrascrive il primo registro.
-- **Protezioni:** non tocca mai la Home Amazon, le Impostazioni, i pacchetti di base di Android, né i servizi che hai chiesto di tenere (Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, Rai, Mediaset, La7). L'elenco `[keep]` in `scripts/firestick-bloat.txt` protegge anche Alexa, Appstore, tastiera, aggiornamenti e **duplica schermo / casting**.
-- **A gruppi di 8**, controllando dopo ognuno che la Home risponda ancora; se no, rimette a posto il gruppo e si ferma.
-- **Verifica rileggendo lo stato**, non fidandosi dei messaggi: Fire OS rifiuta in silenzio i pacchetti protetti. Quelli rifiutati sono elencati (è normale).
-- L'elenco (`scripts/firestick-bloat.txt`) è un file di testo: metti `#` davanti a una riga per tenere quell'app.
+1. Un **servizio di accessibilità** (`HomeGuard`) aspetta che compaia la finestra Home di Amazon. Vede solo il cambio di finestra, non legge lo schermo.
+2. La **copre** subito con una finestra del colore di FireHome e **lancia FireHome tramite un allarme**: Android ritarda di 5 secondi gli avvii dopo Home, ma non quelli che partono da un allarme con `min_futurity=0` (lo imposta lo script).
+3. Premendo Home da un'app vedi circa 0,3 s di nero, poi FireHome. **Tenendo premuto Home** si apre ancora il menu rapido di Amazon (lì c'è anche *Mirroring*).
 
-### Dopo un aggiornamento Amazon
+**Freno di sicurezza:** se FireHome non compare dopo 4 lanci di fila, il servizio si ferma finché apri un'altra app, così un guasto non diventa un ciclo infinito. In *Tutte le app* c'è il tile *Home Amazon* per tornare alla Home di Amazon di proposito.
 
-Gli aggiornamenti possono riattivare pacchetti e aggiungerne di nuovi. Riattiva il Debug ADB, poi:
+**Se la Home torna quella di Amazon** (aggiornamento, azzeramento delle impostazioni): `python3 scripts/firestick.py` la rimette a posto. Amazon ha già rotto in passato i launcher di terzi con aggiornamenti: è il rischio principale di questo metodo.
 
-```bash
-python3 scripts/firestick.py check 192.168.1.50 --stick     # cosa è tornato?
-python3 scripts/firestick.py clean 192.168.1.50 --stick     # rimette a posto
-```
+## Cosa NON toglie
 
-### Quello che la pulizia NON toglie
+- **Gli aggiornamenti Amazon** restano attivi (li ho lasciati apposta). Possono riattivare pacchetti: dopo ogni aggiornamento rilancia lo script. Bloccarli richiede un filtro DNS sul dispositivo (personalDNSfilter, con un permesso VPN da accettare a mano): non è incluso.
+- **Qualche riga di impostazioni** che Fire OS riscrive: controlla in *Impostazioni → Preferenze → Impostazioni sulla privacy*.
+- **Su Fire OS 5/6** il metodo della Home non funziona (lo script lo riconosce e salta quel passo).
 
-- **Il banner e la riga "Sponsorizzati" della Home.** Li scarica il launcher Amazon (non un pacchetto che si possa spegnere). La community prova con un **DNS che blocca le pubblicità** (AdGuard DNS sul router, oppure DNS privato su Fire OS 8), con risultati misti: su alcune Fire Stick non basta. Questo progetto non lo automatizza perché non l'ho potuto verificare.
-- **Le opzioni sulla privacy.** Vanno spente a mano, perché si sincronizzano con l'account Amazon: *Impostazioni → Preferenze → Impostazioni sulla privacy* → *Pubblicità basata sugli interessi*, *Dati di utilizzo del dispositivo*, *Raccogli dati di utilizzo delle app* tutte su OFF; poi *Contenuti in primo piano* → riproduzione automatica di video e audio OFF.
-- **Su Fire OS 5** (verificato sul Fire TV Box del 2015) Amazon rifiuta del tutto `pm disable-user`: se succede, lo strumento lo riconosce e si ferma. Su Fire OS 6, 7 e 8 funziona, ma alcuni pacchetti di telemetria restano protetti.
+## TV Live
 
-## 2. FireHome (l'app)
+Il progetto **non include flussi** di Rai, Mediaset o La7: sono ritrasmissioni non autorizzate. I tre tile *App ufficiali* aprono le app ufficiali; se una non è installata, il tile segnala "Installa dall'Appstore".
 
-| Schermata | Cosa fa |
-|---|---|
-| Home | Orologio, **TV Live**, **Ultimo canale**, **Duplica schermo** (tablet → TV), Netflix, Prime Video, Disney+, Jellyfin, BuddyFit, Tutte le app, Impostazioni. Compaiono solo le app installate. |
-| TV Live | Due gruppi: *App ufficiali* (RaiPlay, Mediaset Infinity, La7: si aprono con un click) e i canali della tua `playlist.m3u`, che partono al volo nel player. |
-| Player | Su/Giù cambia canale, OK mostra il nome, Indietro esce. |
-| Tutte le app | Via di fuga: qualsiasi app installata. |
-
-### Installazione
-
-1. **Compila l'APK**: ogni push su GitHub lo costruisce in *Actions → Build APK → Artifacts → FireHome-apk*.
-   Per un link diretto: crea un tag (`git tag v0.1.0 && git push --tags`) e l'APK appare nelle *Releases*.
-2. **Mettilo sulla Fire Stick**: installa l'app *Downloader* dall'Appstore, abilita *Impostazioni → My Fire TV → Opzioni sviluppatore → Installa app sconosciute → Downloader*, poi incolla il link dell'APK in Release. (Alternativa: `adb connect <ip>:5555 && adb install FireHome.apk`.)
-3. Aprilo da *Le tue app*. Se qualcosa non va, prova `FireHome-debug.apk`.
-
-Poiché non può essere la Home, si apre da *Le tue app*. Da provare per averlo a portata di mano: spostarlo in prima posizione in *Le tue app* (tasto Opzioni sul telecomando); oppure chiedere ad Alexa di aprirlo per nome. Esiste anche una via della community per intercettare il tasto Home (*Launcher Manager Mini*), ma è un'app di terzi che Amazon ha già rotto con aggiornamenti: non è inclusa.
-
-### TV Live
-
-Il progetto **non include flussi** di Rai, Mediaset o La7: sono ritrasmissioni non autorizzate, e non li fornisco né cerco. I tre tile *App ufficiali* aprono le app ufficiali; se una non è installata, il tile segnala "Installa dall'Appstore".
-
-Per avere i canali al volo nel player, usa una **playlist M3U** di una fonte di cui hai i diritti, per esempio un abbonamento IPTV regolare che ti fornisce il link:
+Per avere i canali al volo nel player usa una **playlist M3U** di una fonte di cui hai i diritti (per esempio un abbonamento IPTV regolare):
 
 ```
 #EXTM3U
 #EXTINF:-1 group-title="Generali",Nome canale
 https://fonte-che-hai-diritto.esempio/live.m3u8
-#EXTINF:-1 group-title="Film",Altro canale
-https://fonte-che-hai-diritto.esempio/altro.mpd
 ```
 
-Salvala come `playlist.m3u` e caricala sulla Fire Stick:
+Salvala come `playlist.m3u` e caricala: `adb push playlist.m3u /sdcard/Android/data/app.firehome/files/playlist.m3u`. Riapri FireHome: i canali compaiono in TV Live. (Su Fire OS 8 `/sdcard/Android/data/...` è chiusa ad adb; su Fire OS 7 dovrebbe funzionare: se risponde *Permission denied*, scrivimelo.) Su/Giù cambia canale. I tre canali ufficiali si modificano con `channels.json`, nella stessa cartella.
 
-```bash
-adb push playlist.m3u /sdcard/Android/data/app.firehome/files/playlist.m3u
-```
+## Duplica schermo
 
-Riapri FireHome: i canali compaiono in TV Live, raggruppati come `group-title`. (Il percorso `/sdcard/Android/data/...` va verificato sulla tua versione di Fire OS: se `adb push` risponde *Permission denied*, scrivimelo.) Per modificare i tre canali ufficiali usa `channels.json`, che si carica nella stessa cartella.
+Il tile apre le Impostazioni di Fire TV e ti dice dove andare (*Display e suoni → Abilita duplicazione schermo*): non ho trovato un'attività che apra direttamente la schermata. Più veloce: **tieni premuto Home** e scegli *Mirroring*. Lo script non tocca i servizi di casting (`cast.sink` e simili).
 
-### Personalizzare le app
+## Installazione manuale dell'app
 
-In `Apps.kt` la lista `SHORTCUTS`: nome, colore e come riconoscere l'app (package esatto oppure parte del nome). Se BuddyFit non compare, controlla il nome in *Tutte le app* e correggi la ricerca.
+L'APK si scarica dalle [Releases](https://github.com/rikytax/fire-os-replace/releases) (`FireHome.apk`, con `FireHome.apk.sha256`). Senza lo script resta una normale app in *Le tue app*; per usarla come Home serve il passo 4 (`python3 scripts/firestick.py home`).
 
 ## Struttura
 
 ```
-scripts/firestick.py          pulizia: clean / check / restore / adb-off
-scripts/firestick-bloat.txt   elenco dei pacchetti ([base], [stick], [extras], [keep])
+PULISCI-FIRESTICK.bat / pulisci-firestick.command / pulisci-firestick.sh   lanciatori
+scripts/firestick.py          tutto: ricerca, pulizia, impostazioni, installazione, verifica, ripristino
+scripts/firestick-bloat.txt   pacchetti: [base] [stick] [extras] [protected] [keep]
 app/src/main/kotlin/app/firehome/
   MainActivity.kt   schermate e navigazione
+  HomeGuard.kt      servizio che prende il tasto Home
   Ui.kt             Home, TV Live, Tutte le app (Compose)
   Player.kt         player Media3/ExoPlayer
   Channels.kt       channels.json e playlist.m3u
   Apps.kt           app installate e scorciatoie
-.github/workflows/  build dell'APK
+.github/workflows/  build dell'APK (con tag v* pubblica la Release)
 ```
 
 ## Crediti
 
-Il metodo (registro prima di toccare, protezioni, verifica rileggendo lo stato, controllo dopo gli aggiornamenti) e i nomi dei pacchetti vengono da [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv) (licenza MIT), in particolare dalle liste provate su Fire Stick 4K 2018, Lite 2020, 4K Max 2021 e 4K 2023. Il codice qui è riscritto, non copiato.
+Metodo, protezioni, elenchi e meccanismo della Home vengono da due progetti MIT, a cui va il merito: [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv) (registro prima di toccare, protezioni, verifica rileggendo lo stato, controllo dopo gli aggiornamenti) e [humblemuzzu/dumbtv](https://github.com/humblemuzzu/dumbtv) (servizio Home con allarme e copertura, impostazioni su pubblicità, pacchetti protetti). Il codice qui è riscritto, non copiato; dove i due progetti si contraddicono (per esempio `tigris` e `logan`) ho scelto la via prudente e li ho lasciati attivi.
 
 ## Stato
 
-- `scripts/firestick.py` è provato solo contro un `adb` simulato (stato, pacchetti protetti, Home che smette di rispondere, firmware che rifiuta tutto, registro e ripristino): **mai su una Fire Stick vera**. Il primo giro vero sarà il collaudo.
-- L'app compila su GitHub Actions ma non è stata provata su un dispositivo: da verificare focus del telecomando, tile *Duplica schermo*, caricamento della playlist.
+- `scripts/firestick.py` è provato solo contro un `adb` simulato (pacchetti protetti, Home che smette di rispondere, servizio non agganciato, firmware che rifiuta tutto, registro e ripristino, ricerca in rete, download con SHA-256): **mai su una Fire Stick vera**. Ogni modifica è reversibile con `restore`.
+- L'app compila su GitHub Actions ma non è stata provata su un dispositivo: da verificare presa della Home, focus del telecomando, tile *Duplica schermo*, playlist.
