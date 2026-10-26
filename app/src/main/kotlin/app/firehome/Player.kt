@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -160,7 +161,7 @@ fun PlayerScreen(channel: Channel, zap: (Int) -> Unit) {
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.6f))
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
                     .padding(horizontal = 64.dp, vertical = 28.dp),
             ) {
                 Text(channel.name, fontSize = 36.sp, fontWeight = FontWeight.SemiBold)

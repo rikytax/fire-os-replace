@@ -1,6 +1,8 @@
 package app.firehome
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,9 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -48,14 +53,34 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Bg = Color(0xFF0B0D12)
-private val Surface = Color(0xFF1B2029)
-private val Accent = Color(0xFF1B6EF3)
+private val Bg = Color(0xFF0A1024)
+private val Neutral = Color.Unspecified
+private val Accent = Color(0xFF4F7DFF)
 
+/**
+ * Sfondo "aurora": un gradiente scuro con tre aloni di colore. Il vetro dei tile è fatto di sole trasparenze
+ * e gradienti (niente sfocatura reale, che su una Fire Stick scatterebbe).
+ */
 @Composable
 fun FireTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surface)) {
-        Box(Modifier.fillMaxSize().background(Bg)) { content() }
+    MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Bg)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Brush.linearGradient(listOf(Color(0xFF0A1024), Color(0xFF131B3F), Color(0xFF1E1240))))
+                .drawBehind {
+                    fun halo(color: Color, x: Float, y: Float, radius: Float) = drawRect(
+                        Brush.radialGradient(
+                            listOf(color, Color.Transparent),
+                            center = Offset(size.width * x, size.height * y),
+                            radius = size.minDimension * radius,
+                        ),
+                    )
+                    halo(Color(0x553B6CFF), 0.12f, 0.05f, 0.9f)
+                    halo(Color(0x558A3FFC), 0.95f, 0.95f, 1.0f)
+                    halo(Color(0x3319C2B8), 0.70f, 0.15f, 0.6f)
+                },
+        ) { content() }
     }
 }
 
@@ -67,34 +92,51 @@ private fun rememberInitialFocus(): FocusRequester {
     return requester
 }
 
+/** Un tile di vetro: trasparente, con bordo luminoso e riflesso; al focus si alza con una molla e si accende. */
 @Composable
 private fun Tile(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
-    color: Color = Surface,
+    color: Color = Neutral,
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.07f else 1f, label = "tile-scale")
-    val shape = RoundedCornerShape(16.dp)
+    val scale by animateFloatAsState(if (focused) 1.08f else 1f, spring(dampingRatio = 0.62f, stiffness = 380f), label = "tile-scale")
+    val lift by animateFloatAsState(if (focused) 1f else 0f, tween(220), label = "tile-lift")
+    val shape = RoundedCornerShape(24.dp)
+    val tinted = color != Neutral
+    val glow = if (tinted) color else Color.White
     Box(
         modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .border(if (focused) 3.dp else 0.dp, Color.White, shape)
+            .drawBehind {
+                if (lift > 0f) {
+                    drawCircle(
+                        Brush.radialGradient(listOf(glow.copy(alpha = 0.40f * lift), Color.Transparent), center = center, radius = size.maxDimension * 0.85f),
+                        radius = size.maxDimension * 0.85f,
+                    )
+                }
+            }
+            .border(
+                1.2.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f + 0.55f * lift), Color.White.copy(alpha = 0.05f + 0.10f * lift))),
+                shape,
+            )
             .clip(shape)
-            .background(color)
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f + 0.12f * lift), Color.White.copy(alpha = 0.06f + 0.06f * lift))))
+            .then(if (tinted) Modifier.background(Brush.verticalGradient(listOf(color.copy(alpha = 0.55f), color.copy(alpha = 0.20f)))) else Modifier)
             .clickable(onClick = onClick)
-            .padding(18.dp),
+            .padding(20.dp),
         contentAlignment = Alignment.BottomStart,
     ) {
         Column {
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.96f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) {
-                Text(subtitle, fontSize = 15.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, fontSize = 15.sp, color = Color.White.copy(alpha = 0.68f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -114,8 +156,8 @@ private fun Clock() {
         SimpleDateFormat("EEEE d MMMM", Locale.ITALY).format(now).replaceFirstChar { it.uppercase() }
     }
     Column {
-        Text(time, fontSize = 64.sp, fontWeight = FontWeight.Light)
-        Text(date, fontSize = 20.sp, color = Color.White.copy(alpha = 0.7f))
+        Text(time, fontSize = 72.sp, fontWeight = FontWeight.ExtraLight, color = Color.White.copy(alpha = 0.96f))
+        Text(date, fontSize = 20.sp, fontWeight = FontWeight.Light, color = Color.White.copy(alpha = 0.65f))
     }
 }
 
@@ -182,7 +224,7 @@ fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (
         contentPadding = PaddingValues(horizontal = 64.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item { Text("TV Live", fontSize = 40.sp, fontWeight = FontWeight.Light) }
+        item { Text("TV Live", fontSize = 40.sp, fontWeight = FontWeight.ExtraLight, color = Color.White.copy(alpha = 0.96f)) }
         groups.forEach { (group, list) ->
             item { Text(group, fontSize = 22.sp, color = Color.White.copy(alpha = 0.7f)) }
             item {
