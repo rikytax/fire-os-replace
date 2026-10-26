@@ -7,8 +7,14 @@
   python3 scripts/firestick.py adb-off    spegne il Debug ADB (chiude la porta 5555)
   (anche: clean = solo la pulizia, home = solo FireHome)
 
-Opzioni: un IP o 'usb' come ultimo argomento per saltare la ricerca automatica; --extras, --tv, --no-home,
---apk FILE, --reboot (vedi --help).
+Utilità:
+  python3 scripts/firestick.py status       memoria, spazio, stato della pulizia e della Home
+  python3 scripts/firestick.py screenshot   salva una schermata della TV in Immagini
+  python3 scripts/firestick.py cache        libera la cache delle app
+  python3 scripts/firestick.py install F.apk [G.apk ...]   installa app dal computer
+
+Opzioni: un IP o 'usb' come ultimo argomento per saltare la ricerca automatica; --youtube, --extras, --tv,
+--no-home, --apk FILE, --reboot (vedi --help). Pensato per Nobara Linux (e altre Fedora).
 
 Prima sulla Fire Stick: Impostazioni > My Fire TV > Opzioni sviluppatore > Debug ADB = ON.
 Le app vengono solo disattivate per l'utente 0 (pm disable-user): niente viene disinstallato.
@@ -16,6 +22,7 @@ L'elenco dei pacchetti è in firestick-bloat.txt.
 """
 import argparse
 import concurrent.futures
+import datetime
 import hashlib
 import json
 import os
@@ -41,7 +48,13 @@ GUARD = f"{APP_ID}/{APP_ID}.HomeGuard"
 GUARD_LABEL = "FireHome tasto Home"
 APK_URL = "https://github.com/rikytax/fire-os-replace/releases/latest/download/FireHome.apk"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off")
+SMARTTUBE = "org.smarttube.stable"
+SMARTTUBE_URL = "https://github.com/yuliskov/SmartTube/releases/download/32.56s/SmartTube_stable_32.56_universal.apk"
+SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee04ce5"  # versione fissata e verificata
+SMARTTUBE_VERSION_CODE = 2446
+STOCK_YOUTUBE = "com.amazon.firetv.youtube"
+
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -51,7 +64,7 @@ CORE_RE = re.compile(
     r"|com\.google\.android\.overlay\.modules.*)$"
 )
 # I servizi che hai chiesto di tenere: nessun pacchetto con questi nomi viene toccato, qualunque cosa dica l'elenco.
-KEEP_TOKENS = ("netflix", "firebat", "disney", "jellyfin", "buddyfit", "mediaset", "la7", "raiplay", "rainet")
+KEEP_TOKENS = ("netflix", "firebat", "disney", "jellyfin", "buddyfit", "mediaset", "la7", "raiplay", "rainet", "smarttube")
 
 # Opzioni su pubblicità e uso dei dati (stesse chiavi che scrivono gli interruttori delle Impostazioni).
 PRIVACY = [
@@ -96,30 +109,28 @@ def adb(*args, timeout=60):
 
 
 def find_adb():
-    """adb nel PATH, oppure quello già scaricato, oppure lo scarica da Google (Android platform-tools)."""
+    """adb di sistema (Nobara: sudo dnf install android-tools), oppure scaricato da Google (platform-tools)."""
     found = shutil.which("adb")
     if found:
         return found
-    exe = "adb.exe" if os.name == "nt" else "adb"
-    local = STATE_DIR / "platform-tools" / exe
+    local = STATE_DIR / "platform-tools" / "adb"
     if local.exists():
         return str(local)
-    system = {"win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux")
-    url = f"https://dl.google.com/android/repository/platform-tools-latest-{system}.zip"
-    say("adb non trovato: scarico Android platform-tools da Google (una volta sola)...")
+    say("adb non trovato: scarico Android platform-tools da Google (una volta sola).")
+    say("(Meglio: sudo dnf install android-tools, o ./installa-nobara.sh)")
     try:
         STATE_DIR.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "pt.zip"
+            url = "https://dl.google.com/android/repository/platform-tools-latest-linux.zip"
             with urllib.request.urlopen(url, timeout=120) as r, open(archive, "wb") as f:
                 shutil.copyfileobj(r, f)
             with zipfile.ZipFile(archive) as z:
                 z.extractall(STATE_DIR)
     except Exception as e:
-        die(f"Non riesco a scaricare adb ({e}). Installa 'Android platform-tools' a mano e riprova.")
-    if os.name != "nt":
-        for tool in (STATE_DIR / "platform-tools").iterdir():
-            tool.chmod(tool.stat().st_mode | 0o111)
+        die(f"Non riesco a scaricare adb ({e}). Installalo con: sudo dnf install android-tools")
+    for tool in (STATE_DIR / "platform-tools").iterdir():
+        tool.chmod(tool.stat().st_mode | 0o111)
     return str(local)
 
 
@@ -181,7 +192,7 @@ def connect(target):
     if target == "usb":
         found = usb_devices()
         if not found:
-            die("Nessuna Fire Stick via USB: controlla il cavo e il Debug ADB. Su Windows servono i driver: se non va, usa il Wi-Fi.")
+            die("Nessuna Fire Stick via USB: controlla il cavo e il Debug ADB. Se non va, usa il Wi-Fi.")
         wait_authorized(found[0])
         return found[0]
     if target != "auto":
@@ -553,6 +564,128 @@ def undo_home(tv, record):
     tv.sh("am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME")
 
 
+# --- YouTube senza pubblicità: SmartTube --------------------------------------
+
+def download_verified(url, dest, sha256):
+    if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() == sha256:
+        return
+    say("  scarico SmartTube (circa 35 MB)...")
+    STATE_DIR.mkdir(exist_ok=True)
+    try:
+        with urllib.request.urlopen(url, timeout=180) as r, open(dest, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except Exception as e:
+        die(f"Non riesco a scaricare {url} ({e}).")
+    if hashlib.sha256(dest.read_bytes()).hexdigest() != sha256:
+        dest.unlink()
+        die("Il file scaricato non corrisponde al controllo SHA-256 previsto: non lo installo.")
+    say("  controllo SHA-256 riuscito")
+
+
+def version_code(tv, pkg):
+    out = tv.sh("dumpsys", "package", pkg)
+    m = re.search(r"versionCode=(\d+)", out)
+    return int(m.group(1)) if m else 0
+
+
+def install_youtube(tv, record):
+    """SmartTube (open source, nessun codice per le pubblicità) al posto dell'app YouTube di Amazon."""
+    say("YouTube senza pubblicità (SmartTube)")
+    apk = STATE_DIR / "SmartTube.apk"
+    download_verified(SMARTTUBE_URL, apk, SMARTTUBE_SHA256)
+    for attempt in (1, 2):  # su Wi-Fi la sessione può cadere dopo il trasferimento, con l'app comunque installata
+        if version_code(tv, SMARTTUBE) >= SMARTTUBE_VERSION_CODE:
+            break
+        adb("-s", tv.serial, "install", "-r", str(apk), timeout=600)
+    if version_code(tv, SMARTTUBE) < SMARTTUBE_VERSION_CODE:
+        say("  installazione di SmartTube non riuscita: riprova.")
+        return False
+    say("  SmartTube installata")
+    enabled, disabled = tv.packages("-e"), tv.packages("-d")
+    if STOCK_YOUTUBE in enabled:
+        record["before"].setdefault(STOCK_YOUTUBE, "enabled")
+        save_record(tv.serial, record)
+        tv.sh("pm", "disable-user", "--user", "0", STOCK_YOUTUBE)
+        say("  YouTube di Amazon disattivata (si riattiva con 'restore')")
+    say("  Una volta sola, col telecomando, in SmartTube: menu a sinistra > Impostazioni > Generale > Nascondi contenuti >")
+    say("  'Nascondi Shorts ovunque'; e Impostazioni > Player > Preset video > 1080p 60fps vp9 (mai av01).")
+    return True
+
+
+# --- utilità -----------------------------------------------------------------
+
+def free_kb(tv):
+    out = tv.sh("df", "-k", "/data").strip().splitlines()
+    numbers = [int(x) for x in out[-1].split() if x.isdigit()] if out else []
+    return numbers[2] if len(numbers) >= 3 else None  # colonne: totale, usato, disponibile
+
+
+def mem_kb(tv, field):
+    m = re.search(rf"^{field}:\s+(\d+) kB", tv.sh("cat", "/proc/meminfo"), re.M)
+    return int(m.group(1)) if m else None
+
+
+def megabytes(kb):
+    return "?" if kb is None else f"{kb / 1024:.0f} MB"
+
+
+def run_status(tv, sections):
+    record = load_record(tv.serial)
+    say(f"  memoria libera: {megabytes(mem_kb(tv, 'MemAvailable'))} su {megabytes(mem_kb(tv, 'MemTotal'))}")
+    say(f"  spazio libero per le app: {megabytes(free_kb(tv))}")
+    if record is None:
+        say("  pulizia: non ancora eseguita")
+        return
+    disabled = tv.packages("-d")
+    done = [p for p, state in record["before"].items() if state == "enabled" and p in disabled]
+    say(f"  app Amazon disattivate: {len(done)}; protette e silenziate: {len(record['appops'])}")
+    installed = APP_ID in tv.packages("-e")
+    bound = GUARD in (tv.setting("secure", "enabled_accessibility_services") or "")
+    say(f"  FireHome: {'installata' if installed else 'non installata'}; servizio Home: {'attivo' if bound else 'spento'}")
+    say(f"  YouTube senza pubblicità (SmartTube): {'sì' if SMARTTUBE in tv.packages('-e') else 'no'}")
+
+
+def pictures_dir():
+    try:
+        out = subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True, timeout=5).stdout.strip()
+        if out:
+            return Path(out)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path.home() / "Pictures"
+
+
+def run_screenshot(tv):
+    r = subprocess.run([ADB, "-s", tv.serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=60)
+    if not r.stdout.startswith(b"\x89PNG"):
+        die("La Fire Stick non ha restituito un'immagine. Riprova.")
+    folder = pictures_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"firestick-{datetime.datetime.now():%Y%m%d-%H%M%S}.png"
+    path.write_bytes(r.stdout)
+    say(f"Schermata salvata: {path}")
+    say("(Netflix e Prime Video escono neri: è la protezione dei contenuti.)")
+
+
+def run_cache(tv):
+    before = free_kb(tv)
+    tv.sh("pm", "trim-caches", "4G", timeout=120)
+    after = free_kb(tv)
+    say(f"Spazio libero: {megabytes(before)} -> {megabytes(after)}")
+    if before is not None and after is not None and after <= before:
+        say("Niente da liberare (o Fire OS non ha permesso la pulizia).")
+
+
+def run_install(tv, files):
+    apks = [Path(f) for f in files]
+    missing = [str(f) for f in apks if not f.is_file()]
+    if not apks or missing:
+        die(f"Indica uno o più file .apk esistenti (mancano: {', '.join(missing) or 'nessuno indicato'}).")
+    for apk in apks:
+        out = adb("-s", tv.serial, "install", "-r", str(apk), timeout=600)
+        say(f"  {apk.name}: {'installata' if 'Success' in out else 'NON riuscita: ' + out.strip().splitlines()[-1]}")
+
+
 # --- comandi ----------------------------------------------------------------
 
 def write_report(tv, known, keep, extra=None):
@@ -636,6 +769,8 @@ def run_restore(tv, sections):
     for p in targets:
         tv.sh("pm", "enable", "--user", "0", p)
     left = [p for p in targets if p in tv.packages("-d")]
+    if SMARTTUBE in tv.packages("-e"):
+        say("SmartTube resta installata (per toglierla: adb uninstall org.smarttube.stable).")
     say(f"Ripristinato: {len(targets) - len(left)} pacchetti, {len(record['settings'])} impostazioni, Home Amazon.")
     for p in left:
         say(f"  non riattivato: {p}")
@@ -645,8 +780,10 @@ def main():
     for stream in (sys.stdout, sys.stderr):  # la console di Windows può non reggere le lettere accentate
         stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", nargs="?", default="all", help="all (predefinito), clean, home, check, restore, adb-off")
+    parser.add_argument("command", nargs="?", default="all", help="all (predefinito), clean, home, check, restore, adb-off, status, screenshot, cache, install")
     parser.add_argument("target", nargs="?", default="auto", help="'usb', un IP, oppure niente per cercarla da solo")
+    parser.add_argument("more", nargs="*", help="altri file .apk (solo per 'install')")
+    parser.add_argument("--youtube", action="store_true", help="installa SmartTube (YouTube senza pubblicità) e disattiva YouTube di Amazon")
     parser.add_argument("--tv", action="store_true", help="è una TV con Fire OS integrato, non una Fire Stick: non toglie la scheda Live")
     parser.add_argument("--extras", action="store_true", help="toglie anche Alexa extra (timer, multi-room), Silk e Ambient")
     parser.add_argument("--no-home", action="store_true", help="non installare FireHome e non prendere la Home")
@@ -655,6 +792,9 @@ def main():
     args = parser.parse_args()
     if args.command not in COMMANDS:  # 'firestick.py 192.168.1.50' = comando predefinito su quell'IP
         args.command, args.target = "all", args.command
+    files = []
+    if args.command == "install":  # 'install a.apk b.apk': tutti gli argomenti sono file
+        files, args.target = [args.target] + args.more, "auto"
 
     global ADB
     ADB = find_adb()
@@ -664,12 +804,22 @@ def main():
 
     if args.command in ("all", "clean"):
         run_clean(tv, sections, args, sdk)
+    if args.youtube and args.command in ("all", "clean"):
+        install_youtube(tv, new_record(tv.serial))
     if args.command == "home" or (args.command == "all" and not args.no_home):
         run_home(tv, sections, args, sdk)
     if args.command == "check":
         sys.exit(run_check(tv, sections, args))
     if args.command == "restore":
         run_restore(tv, sections)
+    if args.command == "status":
+        run_status(tv, sections)
+    if args.command == "screenshot":
+        run_screenshot(tv)
+    if args.command == "cache":
+        run_cache(tv)
+    if args.command == "install":
+        run_install(tv, files)
     if args.command == "adb-off":
         tv.sh("settings", "put", "global", "adb_enabled", "0")
         say("Debug ADB spento. Per riaccenderlo: Impostazioni > My Fire TV > Opzioni sviluppatore.")

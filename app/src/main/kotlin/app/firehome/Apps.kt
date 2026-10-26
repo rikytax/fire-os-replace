@@ -17,6 +17,7 @@ private val SHORTCUTS = listOf(
     ShortcutSpec("Prime Video", 0xFF00A8E1, listOf("com.amazon.firebat", "Prime Video")),
     ShortcutSpec("Disney+", 0xFF113CCF, listOf("com.disney.disneyplus", "Disney")),
     ShortcutSpec("Jellyfin", 0xFF6B4FBB, listOf("org.jellyfin.androidtv", "Jellyfin")),
+    ShortcutSpec("YouTube", 0xFFD32F2F, listOf("org.smarttube.stable", "com.amazon.firetv.youtube")),
     ShortcutSpec("BuddyFit", 0xFF1FA67A, listOf("BuddyFit")),
 )
 
