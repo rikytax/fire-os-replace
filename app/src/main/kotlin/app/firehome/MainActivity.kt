@@ -45,11 +45,11 @@ class MainActivity : ComponentActivity() {
                         onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
                         onApp = ::launch,
                         onAllApps = { screen = Screen.AllApps },
-                        onSettings = { start(Intent(Settings.ACTION_SETTINGS)) },
-                        onMirror = { start(Intent(Settings.ACTION_CAST_SETTINGS), fallback = Intent(Settings.ACTION_DISPLAY_SETTINGS)) },
+                        onSettings = ::openSettings,
+                        onMirror = ::openMirroring,
                     )
                     Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
-                    Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch)
+                    Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch, onAmazon = { HomeGuard.openAmazon(this) })
                     is Screen.Playing -> PlayerScreen(s.channel, zap = ::zap)
                 }
             }
@@ -61,6 +61,15 @@ class MainActivity : ComponentActivity() {
         // Ricarica a ogni ritorno: vede le app appena installate e i file channels.json / playlist.m3u aggiornati.
         apps = installedApps(this)
         channels = loadChannels(this) + loadPlaylist(this)
+    }
+
+    // Siamo sul display: il servizio Home toglie la copertura e non rilancia più nulla.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            HomeGuard.shown()
+            HomeGuard.arrived(this)
+        }
     }
 
     // Il tasto Home mentre siamo già aperti riporta alla schermata principale.
@@ -93,6 +102,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launch(app: InstalledApp) = start(app.intent)
+
+    // Su Fire OS ACTION_SETTINGS apre un ponte che rimanda alla Home Amazon: serve la categoria LEANBACK_SETTINGS.
+    private fun openSettings() =
+        start(Intent(Intent.ACTION_MAIN).addCategory("android.intent.category.LEANBACK_SETTINGS"), fallback = Intent(Settings.ACTION_SETTINGS))
+
+    // Non esiste un'attività verificata per la duplicazione: si apre Impostazioni e si dice dove andare.
+    private fun openMirroring() {
+        Toast.makeText(this, "Display e suoni → Abilita duplicazione schermo (oppure tieni premuto Home)", Toast.LENGTH_LONG).show()
+        openSettings()
+    }
 
     private fun installFromAppstore(name: String) {
         Toast.makeText(this, "$name non è installata", Toast.LENGTH_SHORT).show()

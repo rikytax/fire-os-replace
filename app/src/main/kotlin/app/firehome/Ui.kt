@@ -201,7 +201,7 @@ fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (
 }
 
 @Composable
-fun AllAppsScreen(apps: List<InstalledApp>, onApp: (InstalledApp) -> Unit) {
+fun AllAppsScreen(apps: List<InstalledApp>, onApp: (InstalledApp) -> Unit, onAmazon: () -> Unit) {
     val focus = rememberInitialFocus()
     LazyVerticalGrid(
         GridCells.Adaptive(220.dp),
@@ -217,5 +217,6 @@ fun AllAppsScreen(apps: List<InstalledApp>, onApp: (InstalledApp) -> Unit) {
                 focusRequester = if (a === apps.first()) focus else null,
             ) { onApp(a) }
         }
+        item { Tile("Home Amazon", Modifier.height(110.dp), subtitle = "Resta finché apri un'app", onClick = onAmazon) }
     }
 }

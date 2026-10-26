@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home</string>
+    <string name="guard_label">FireHome tasto Home</string>
+    <string name="guard_description">Permette a FireHome di sostituire la schermata Home di Amazon. Vede solo quando cambia la finestra in primo piano e non legge il contenuto dello schermo.</string>
 </resources>
