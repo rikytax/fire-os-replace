@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private var apps by mutableStateOf(emptyList<InstalledApp>())
     private var channels by mutableStateOf(emptyList<Channel>())
     private var domotica by mutableStateOf<Domotica?>(null)
+    private var suggestions by mutableStateOf(emptyList<Suggestion>())
     private var lastName by mutableStateOf<String?>(null)
     private var screen by mutableStateOf<Screen>(Screen.Home)
 
@@ -47,9 +48,11 @@ class MainActivity : ComponentActivity() {
                         onApp = ::launch,
                         onAllApps = { screen = Screen.AllApps },
                         casa = domotica?.actions?.map { it.name } ?: emptyList(),
+                        suggestions = suggestions,
                         onCasa = ::runHomeAction,
                         onSettings = ::openSettings,
                         onMirror = ::openMirroring,
+                        onSuggestion = ::openSuggestion,
                     )
                     Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
                     Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch, onAmazon = { HomeGuard.openAmazon(this) })
@@ -65,6 +68,11 @@ class MainActivity : ComponentActivity() {
         apps = installedApps(this)
         channels = loadChannels(this) + loadPlaylist(this)
         domotica = loadDomotica(this)
+        // I suggerimenti arrivano da internet (con una cache di 12 ore): si caricano fuori dal thread principale.
+        Thread {
+            val loaded = loadSuggestions(this)
+            runOnUiThread { suggestions = loaded }
+        }.start()
     }
 
     // Siamo sul display: il servizio Home toglie la copertura e non rilancia più nulla.
@@ -113,6 +121,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launch(app: InstalledApp) = start(app.intent)
+
+    // Apre il servizio su cui il titolo è disponibile; non esiste un collegamento diretto al titolo, quindi lo si cerca lì.
+    private fun openSuggestion(s: Suggestion) {
+        val target = s.providers.firstNotNullOfOrNull { apps.findApp(providerQueries(it)) }
+        if (target == null) {
+            Toast.makeText(this, "Disponibile su: ${s.providers.joinToString { shortProvider(it) }}", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Cerca «${s.title}» su ${target.label}", Toast.LENGTH_LONG).show()
+        launch(target)
+    }
 
     private fun runHomeAction(index: Int) {
         val ha = domotica ?: return

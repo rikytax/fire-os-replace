@@ -101,6 +101,30 @@ Salvala come `playlist.m3u` e caricala: `adb push playlist.m3u /sdcard/Android/d
 
 **Duplica schermo:** il tile apre le Impostazioni e ti dice dove andare (*Display e suoni → Abilita duplicazione schermo*): non esiste un'attività verificata che apra direttamente la schermata. Più veloce: **tieni premuto Home** e scegli *Mirroring*. Lo script non tocca i servizi di casting.
 
+## La Home
+
+Layout pensato per lo schermo della Fire Stick (circa 960 × 540 punti), che scorre verso il basso: nulla viene mai tagliato.
+
+- **In alto:** orologio e saluto.
+- **Schede grandi:** *TV Live*, *Riprendi* (l'ultimo canale) e *Duplica schermo*, ognuna con icona e una riga che spiega cosa fa.
+- **Le tue app:** l'icona vera di ogni app, il nome e una descrizione (Netflix, Prime Video, Disney+, Jellyfin, YouTube, BuddyFit), poi *Tutte le app* e *Impostazioni*. Scendendo col telecomando compaiono i **suggerimenti**.
+- **Consigliati per te:** locandine di film e serie di tendenza in Italia, **solo quelli che puoi guardare** su Netflix, Prime Video, Disney+, RaiPlay o Infinity. Premendo OK si apre l'app giusta e un messaggio ti dice cosa cercare: non esiste un collegamento diretto al titolo.
+
+### Attivare i suggerimenti (una volta sola, gratis)
+
+I dati vengono da [TMDB](https://www.themoviedb.org/) (la disponibilità in streaming da JustWatch). Serve una chiave gratuita:
+
+1. Crea un account su themoviedb.org e conferma l'email.
+2. *Impostazioni → API → Richiedi una chiave* (uso personale). Ti danno una **API Key (v3)** di 32 caratteri.
+3. Sul PC: `python3 scripts/firestick.py suggerimenti LA_TUA_CHIAVE`
+4. Riapri FireHome: i suggerimenti compaiono dopo qualche secondo e si aggiornano ogni 12 ore.
+
+Senza chiave la riga semplicemente non compare. *Questo prodotto usa l'API di TMDB ma non è approvato né certificato da TMDB.*
+
+### Aggiornare FireHome sulla Fire Stick
+
+Scarica `FireHome.apk` aggiornato dalla pagina *Releases* e lancia: `./pulisci-firestick.sh home 192.168.1.5` (con il tuo IP). Reinstalla l'app mantenendo impostazioni e playlist.
+
 ## Domotica (Home Assistant)
 
 I comandi vocali di Alexa per luci e prese funzionano già (lo script non li tocca: **non usare `--extras`**, che spegne la parte smart home di Alexa). In più FireHome può mostrare tile "Casa" in Home che chiamano [Home Assistant](https://www.home-assistant.io/). Si configura con `domotica.json`, da caricare come la playlist: `adb push domotica.json /sdcard/Android/data/app.firehome/files/domotica.json`.

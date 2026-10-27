@@ -7,18 +7,18 @@ import androidx.compose.ui.graphics.Color
 data class InstalledApp(val label: String, val pkg: String, val intent: Intent)
 
 /** Un'app in evidenza nella Home. Si cerca per package esatto o per nome, nell'ordine dato. */
-data class Shortcut(val label: String, val color: Color, val app: InstalledApp)
+data class Shortcut(val label: String, val desc: String, val color: Color, val app: InstalledApp)
 
-private class ShortcutSpec(val label: String, val color: Long, val queries: List<String>)
+private class ShortcutSpec(val label: String, val desc: String, val color: Long, val queries: List<String>)
 
 // Per aggiungere o togliere servizi dalla Home basta modificare questa lista.
 private val SHORTCUTS = listOf(
-    ShortcutSpec("Netflix", 0xFFE50914, listOf("com.netflix.ninja", "Netflix")),
-    ShortcutSpec("Prime Video", 0xFF00A8E1, listOf("com.amazon.firebat", "Prime Video")),
-    ShortcutSpec("Disney+", 0xFF113CCF, listOf("com.disney.disneyplus", "Disney")),
-    ShortcutSpec("Jellyfin", 0xFF6B4FBB, listOf("org.jellyfin.androidtv", "Jellyfin")),
-    ShortcutSpec("YouTube", 0xFFD32F2F, listOf("org.smarttube.stable", "com.amazon.firetv.youtube")),
-    ShortcutSpec("BuddyFit", 0xFF1FA67A, listOf("BuddyFit")),
+    ShortcutSpec("Netflix", "Film e serie TV", 0xFFE50914, listOf("com.netflix.ninja", "Netflix")),
+    ShortcutSpec("Prime Video", "Film e serie Amazon", 0xFF00A8E1, listOf("com.amazon.firebat", "Prime Video")),
+    ShortcutSpec("Disney+", "Cartoni, Marvel, Star Wars", 0xFF113CCF, listOf("com.disney.disneyplus", "Disney")),
+    ShortcutSpec("Jellyfin", "La tua libreria di film", 0xFF6B4FBB, listOf("org.jellyfin.androidtv", "Jellyfin")),
+    ShortcutSpec("YouTube", "Video e musica", 0xFFD32F2F, listOf("org.smarttube.stable", "com.amazon.firetv.youtube")),
+    ShortcutSpec("BuddyFit", "La tua app", 0xFF1FA67A, listOf("BuddyFit")),
 )
 
 fun installedApps(ctx: Context): List<InstalledApp> {
@@ -41,4 +41,4 @@ fun List<InstalledApp>.findApp(queries: List<String>): InstalledApp? =
     }
 
 fun List<InstalledApp>.shortcuts(): List<Shortcut> =
-    SHORTCUTS.mapNotNull { spec -> findApp(spec.queries)?.let { Shortcut(spec.label, Color(spec.color), it) } }
+    SHORTCUTS.mapNotNull { spec -> findApp(spec.queries)?.let { Shortcut(spec.label, spec.desc, Color(spec.color), it) } }

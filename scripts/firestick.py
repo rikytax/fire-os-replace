@@ -12,6 +12,7 @@ Utilità:
   python3 scripts/firestick.py screenshot   salva una schermata della TV in Immagini
   python3 scripts/firestick.py cache        libera la cache delle app
   python3 scripts/firestick.py install F.apk [G.apk ...]   installa app dal computer
+  python3 scripts/firestick.py suggerimenti CHIAVE   attiva i suggerimenti di film e serie (chiave gratuita TMDB)
   python3 scripts/firestick.py hdmi         diagnosi HDMI-CEC (Anynet+ sui Samsung): salva fire-hdmi.txt
   python3 scripts/firestick.py discover-live   cerca i collegamenti diretti ai canali nelle app RaiPlay, Mediaset, La7
 
@@ -56,7 +57,7 @@ SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee0
 SMARTTUBE_VERSION_CODE = 2446
 STOCK_YOUTUBE = "com.amazon.firetv.youtube"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live")
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -709,6 +710,21 @@ def run_hdmi(tv):
     say("  Spegnere il CEC toglie l'accensione e lo spegnimento sincronizzati con la TV: provalo per capire se è lui la causa.")
 
 
+def run_suggerimenti(tv, key):
+    """Scrive suggerimenti.json sulla Fire Stick con la chiave gratuita di TMDB (themoviedb.org > Impostazioni > API)."""
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", key or ""):
+        die("La chiave TMDB (API Key v3) è di 32 caratteri esadecimali. La crei gratis su themoviedb.org: Impostazioni > API.")
+    folder = f"/sdcard/Android/data/{APP_ID}/files"
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "suggerimenti.json"
+        config.write_text(json.dumps({"tmdb": key}))
+        tv.sh("mkdir", "-p", folder)
+        out = adb("-s", tv.serial, "push", str(config), f"{folder}/suggerimenti.json")
+    if "pushed" not in out:
+        die(f"Non riesco a scrivere sulla Fire Stick ({out.strip().splitlines()[-1] if out.strip() else 'nessuna risposta'}). FireHome è installata e aperta almeno una volta?")
+    say("Fatto. Riapri FireHome: i suggerimenti compaiono dopo qualche secondo, in fondo alla Home.")
+
+
 def run_discover_live(tv):
     """Sola lettura: cerca nelle app dei canali gli schemi e gli indirizzi che aprono una diretta."""
     keys = ("raiplay", "rainet", "mediaset", "infinity", "la7")
@@ -831,7 +847,9 @@ def main():
     args = parser.parse_args()
     if args.command not in COMMANDS:  # 'firestick.py 192.168.1.50' = comando predefinito su quell'IP
         args.command, args.target = "all", args.command
-    files = []
+    files, key = [], None
+    if args.command == "suggerimenti":  # 'suggerimenti CHIAVE': l'argomento è la chiave, non un indirizzo
+        key, args.target = args.target, "auto"
     if args.command == "install":  # 'install a.apk b.apk': tutti gli argomenti sono file
         files, args.target = [args.target] + args.more, "auto"
 
@@ -859,6 +877,8 @@ def main():
         run_cache(tv)
     if args.command == "install":
         run_install(tv, files)
+    if args.command == "suggerimenti":
+        run_suggerimenti(tv, key)
     if args.command == "hdmi":
         run_hdmi(tv)
     if args.command == "discover-live":
