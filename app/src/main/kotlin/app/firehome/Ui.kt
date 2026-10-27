@@ -86,7 +86,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.URL
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -319,23 +318,32 @@ private fun AppCard(
     glyph: Glyph? = null,
     iconPkg: String? = null,
     tint: Color = Neutral,
+    big: Boolean = false,
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
+    val iconSize = if (big) 52.dp else 44.dp
     Panel(modifier, tint, focusRequester = focusRequester, onClick = onClick) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             when {
-                iconPkg != null -> AppIcon(iconPkg, 44.dp)
-                glyph != null -> GlyphBadge(glyph, 44.dp)
+                iconPkg != null -> AppIcon(iconPkg, iconSize)
+                glyph != null -> GlyphBadge(glyph, iconSize)
             }
-            Spacer(Modifier.height(6.dp))
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(if (big) 8.dp else 6.dp))
+            Text(title, fontSize = if (big) 15.sp else 13.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             if (desc != null) {
-                Text(desc, fontSize = 10.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                Text(desc, fontSize = if (big) 11.sp else 10.sp, color = OnVariant, maxLines = if (big) 1 else 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             }
         }
     }
 }
+
+/** Una voce della griglia delle app nella Home. */
+private class GridItem(val title: String, val desc: String?, val pkg: String?, val glyph: Glyph?, val tint: Color, val onClick: () -> Unit)
 
 @Composable
 private fun PosterCard(s: Suggestion, onClick: () -> Unit) {
@@ -383,15 +391,13 @@ private fun HeroButton(label: String, glyph: Glyph?, primary: Boolean, focusRequ
 
 @Composable
 private fun Hero(
-    spot: Suggestion?,
+    spot: Suggestion,
     watchLabel: String,
-    focus: FocusRequester,
+    focus: FocusRequester?,
     onWatch: () -> Unit,
     onNext: () -> Unit,
-    onLive: () -> Unit,
-    onApps: () -> Unit,
 ) {
-    val backdrop = rememberRemoteImage(spot?.backdropUrl)
+    val backdrop = rememberRemoteImage(spot.backdropUrl)
     val shape = RoundedCornerShape(20.dp)
     Box(
         Modifier
@@ -407,33 +413,21 @@ private fun Hero(
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, SurfaceDim))))
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(SurfaceDim, SurfaceDim.copy(alpha = 0.6f), Color.Transparent))))
         Column(Modifier.align(Alignment.BottomStart).padding(22.dp).widthIn(max = 520.dp)) {
-            if (spot != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Chip("In primo piano", Primary, filled = true)
-                    Chip(spot.kind)
-                    if (spot.year.isNotEmpty()) Chip(spot.year)
-                    Chip("★ ${String.format(Locale.ITALY, "%.1f", spot.rating)}")
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(spot.title, fontSize = 28.sp, fontWeight = FontWeight.Black, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (spot.overview.isNotEmpty()) {
-                    Text(spot.overview, fontSize = 12.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HeroButton(watchLabel, Glyph.Play, primary = true, focusRequester = focus, onClick = onWatch)
-                    HeroButton("Altro titolo", null, primary = false, onClick = onNext)
-                }
-            } else {
-                Chip(greeting(), Primary, filled = true)
-                Spacer(Modifier.height(8.dp))
-                Text("Cosa guardiamo stasera?", fontSize = 28.sp, fontWeight = FontWeight.Black, color = OnSurface, maxLines = 1)
-                Text("Le dirette, le tue app e, con la chiave TMDB, i consigli sui film e le serie del momento.", fontSize = 12.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HeroButton("TV Live", Glyph.Tv, primary = true, focusRequester = focus, onClick = onLive)
-                    HeroButton("Le tue app", Glyph.Grid, primary = false, onClick = onApps)
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Chip("In primo piano", Primary, filled = true)
+                Chip(spot.kind)
+                if (spot.year.isNotEmpty()) Chip(spot.year)
+                Chip("★ ${String.format(Locale.ITALY, "%.1f", spot.rating)}")
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(spot.title, fontSize = 28.sp, fontWeight = FontWeight.Black, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (spot.overview.isNotEmpty()) {
+                Text(spot.overview, fontSize = 12.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                HeroButton(watchLabel, Glyph.Play, primary = true, focusRequester = focus, onClick = onWatch)
+                HeroButton("Altro titolo", null, primary = false, onClick = onNext)
             }
         }
     }
@@ -524,13 +518,6 @@ private fun StatusBar() {
     }
 }
 
-private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-    in 5..11 -> "Buongiorno"
-    in 12..17 -> "Buon pomeriggio"
-    in 18..22 -> "Buonasera"
-    else -> "Buonanotte"
-}
-
 @Composable
 private fun SectionTitle(text: String, note: String? = null) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -543,13 +530,11 @@ private fun SectionTitle(text: String, note: String? = null) {
 
 @Composable
 fun HomeScreen(
-    channels: List<Channel>,
     last: Channel?,
     shortcuts: List<Shortcut>,
     casa: List<String>,
     suggestions: List<Suggestion>,
     watchLabel: (Suggestion) -> String,
-    onLive: () -> Unit,
     onLast: () -> Unit,
     onApp: (InstalledApp) -> Unit,
     onAllApps: () -> Unit,
@@ -561,34 +546,41 @@ fun HomeScreen(
     var heroIndex by remember { mutableIntStateOf(0) }
     val spots = suggestions.filter { it.backdropUrl != null }.ifEmpty { suggestions }
     val spot = if (spots.isEmpty()) null else spots[heroIndex % spots.size]
-    val liveDesc = if (channels.any { it.stream != null }) "I tuoi canali e le dirette ufficiali" else "Rai, Mediaset e La7 in diretta"
+    val gridItems = shortcuts.map { s -> GridItem(s.label, s.desc, s.app.pkg, null, s.color) { onApp(s.app) } } +
+        GridItem("Tutte le app", "Tutto ciò che è installato", null, Glyph.Grid, Neutral, onAllApps)
+    val columns = 4
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 26.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { StatusBar() }
-        item {
-            Hero(
-                spot = spot,
-                watchLabel = spot?.let(watchLabel) ?: "",
-                focus = focus,
-                onWatch = { spot?.let(onSuggestion) },
-                onNext = { heroIndex++ },
-                onLive = onLive,
-                onApps = onAllApps,
-            )
+        if (spot != null) {
+            item {
+                Hero(
+                    spot = spot,
+                    watchLabel = watchLabel(spot),
+                    focus = focus,
+                    onWatch = { onSuggestion(spot) },
+                    onNext = { heroIndex++ },
+                )
+            }
         }
         item { SectionTitle("Le tue app", "Avvio rapido") }
-        item {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-            ) {
-                items(shortcuts) { s ->
-                    AppCard(s.label, s.desc, Modifier.size(128.dp, 120.dp), iconPkg = s.app.pkg, tint = s.color) { onApp(s.app) }
+        // Griglia a 4 colonne: righe fisse dentro la colonna che scorre, con tessere ampie.
+        gridItems.chunked(columns).forEach { row ->
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    row.forEach { g ->
+                        AppCard(
+                            g.title, g.desc, Modifier.weight(1f).height(112.dp),
+                            glyph = g.glyph, iconPkg = g.pkg, tint = g.tint, big = true,
+                            focusRequester = if (spot == null && g === gridItems.first()) focus else null,
+                            onClick = g.onClick,
+                        )
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                item { AppCard("Tutte le app", "Tutto ciò che è installato", Modifier.size(128.dp, 120.dp), glyph = Glyph.Grid, onClick = onAllApps) }
             }
         }
         item { SectionTitle("Controlli rapidi") }
@@ -597,7 +589,6 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
             ) {
-                item { WideCard("TV Live", liveDesc, Modifier.size(250.dp, 64.dp), glyph = Glyph.Tv, tint = Primary, compact = true, onClick = onLive) }
                 if (last != null) {
                     item { WideCard("Riprendi", last.name, Modifier.size(200.dp, 64.dp), glyph = Glyph.Play, compact = true, onClick = onLast) }
                 }

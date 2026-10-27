@@ -13,6 +13,7 @@ Utilità:
   python3 scripts/firestick.py cache        libera la cache delle app
   python3 scripts/firestick.py install F.apk [G.apk ...]   installa app dal computer
   python3 scripts/firestick.py suggerimenti CHIAVE   attiva i suggerimenti di film e serie (chiave gratuita TMDB)
+  python3 scripts/firestick.py ram          i processi che occupano più memoria, e cosa sono
   python3 scripts/firestick.py hdmi         diagnosi HDMI-CEC (Anynet+ sui Samsung): salva fire-hdmi.txt
   python3 scripts/firestick.py discover-live   cerca i collegamenti diretti ai canali nelle app RaiPlay, Mediaset, La7
 
@@ -57,7 +58,7 @@ SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee0
 SMARTTUBE_VERSION_CODE = 2446
 STOCK_YOUTUBE = "com.amazon.firetv.youtube"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti")
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti", "ram")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -753,6 +754,39 @@ def run_hdmi(tv):
     say("  Spegnere il CEC toglie l'accensione e lo spegnimento sincronizzati con la TV: provalo per capire se è lui la causa.")
 
 
+def run_ram(tv, sections):
+    """Sola lettura: i processi più pesanti in memoria. Serve a decidere cosa togliere guardando i dati, non a intuito."""
+    out = tv.sh("dumpsys", "meminfo", timeout=120)
+    block = out.split("Total PSS by process:", 1)[-1].split("Total PSS by OOM", 1)[0]
+    procs = [(int(re.sub(r"[.,]", "", m.group(1))), m.group(2))
+             for m in re.finditer(r"^\s*([\d.,]+)K: (\S+)", block, re.M)]
+    if not procs:
+        die("Non riesco a leggere la memoria dei processi su questa Fire Stick.")
+    keep = sections.get("keep", [])
+    listed = set(wanted(sections, True, True))
+    record = load_record(tv.serial)
+    silenced = set(record["appops"]) if record else set()
+    disabled = tv.packages("-d")
+    say(f"Memoria libera: {megabytes(mem_kb(tv, 'MemAvailable'))} su {megabytes(mem_kb(tv, 'MemTotal'))}")
+    say(f"{'MB':>6}  {'processo':<48} stato")
+    for kb, name in procs[:20]:
+        pkg = name.split(":")[0]
+        if pkg in disabled:
+            state = "disattivata ma ancora in memoria"
+        elif pkg in silenced:
+            state = "protetta, silenziata in background"
+        elif pkg in listed:
+            state = "nell'elenco ma Fire OS non la lascia disattivare"
+        elif is_kept(pkg, keep):
+            state = "da tenere"
+        elif pkg.startswith("com.amazon."):
+            state = "Amazon, non nell'elenco: candidata"
+        else:
+            state = ""
+        say(f"{kb / 1024:6.0f}  {name:<48} {state}")
+    say("Dopo una pulizia conviene riavviare la Fire Stick (--reboot): libera la memoria che i processi disattivati ancora occupano.")
+
+
 def run_suggerimenti(tv, key):
     """Scrive suggerimenti.json sulla Fire Stick con la chiave gratuita di TMDB (themoviedb.org > Impostazioni > API)."""
     if not re.fullmatch(r"[0-9a-fA-F]{32}", key or ""):
@@ -922,6 +956,8 @@ def main():
         run_install(tv, files)
     if args.command == "suggerimenti":
         run_suggerimenti(tv, key)
+    if args.command == "ram":
+        run_ram(tv, sections)
     if args.command == "hdmi":
         run_hdmi(tv)
     if args.command == "discover-live":

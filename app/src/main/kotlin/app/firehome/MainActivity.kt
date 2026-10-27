@@ -57,13 +57,11 @@ class MainActivity : ComponentActivity() {
                             Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
                             Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch, onAmazon = { HomeGuard.openAmazon(this@MainActivity) })
                             else -> HomeScreen(
-                                channels = channels,
                                 last = channels.firstOrNull { it.name == lastName },
                                 shortcuts = apps.shortcuts(),
                                 casa = domotica?.actions?.map { it.name } ?: emptyList(),
                                 suggestions = suggestions,
                                 watchLabel = ::watchLabel,
-                                onLive = { screen = Screen.Live },
                                 onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
                                 onApp = ::launch,
                                 onAllApps = { screen = Screen.AllApps },

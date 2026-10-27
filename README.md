@@ -44,6 +44,7 @@ Con `--youtube`, la prima volta, col telecomando in SmartTube: menu a sinistra �
 ./pulisci-firestick.sh                  # tutto: pulizia + FireHome come Home
 ./pulisci-firestick.sh --youtube        # ... e YouTube senza pubblicità
 python3 scripts/firestick.py status     # memoria, spazio libero, stato di pulizia e Home
+python3 scripts/firestick.py ram        # i processi che occupano più memoria e cosa sono (decide cosa togliere con i dati)
 python3 scripts/firestick.py screenshot # schermata della TV in ~/Immagini
 python3 scripts/firestick.py cache      # libera la cache delle app (utile: lo spazio è poco)
 python3 scripts/firestick.py install app.apk   # installa un'app dal PC
@@ -107,9 +108,9 @@ Stile "ghiaccio": blu notte con azzurro, ispirato al tuo mockup ma adattato a ci
 
 - **Barra laterale** (sempre con icona e nome): *Home*, *TV Live*, *App*, *Impostazioni*.
 - **In alto:** stato reale della rete (*Wi-Fi 5 GHz*, *Ethernet*...), la **RAM libera** e l'orologio.
-- **Banner in primo piano:** un film o una serie di tendenza in Italia, con locandina di sfondo, voto, trama e il pulsante **Guarda su Netflix / Prime Video / Disney+...** (apre l'app giusta e ti dice cosa cercare; "Altro titolo" passa al successivo). Senza la chiave TMDB il banner diventa un saluto con i pulsanti *TV Live* e *Le tue app*.
-- **Le tue app:** l'icona vera di ogni app, il nome e una descrizione, poi *Tutte le app*.
-- **Controlli rapidi:** *TV Live*, *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica.
+- **Banner in primo piano:** un film o una serie di tendenza in Italia, con locandina di sfondo, voto, trama e il pulsante **Guarda su Netflix / Prime Video / Disney+...** (apre l'app giusta e ti dice cosa cercare; "Altro titolo" passa al successivo). Compare solo se hai attivato la chiave TMDB: altrimenti non c'è nessun banner e le app salgono in cima.
+- **Le tue app:** una griglia a 4 colonne con tessere ampie: l'icona vera di ogni app, il nome e una descrizione (Netflix, Prime Video, Disney+, Jellyfin, YouTube, Spotify, BuddyFit), poi *Tutte le app*.
+- **Controlli rapidi:** *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica. *TV Live* è nella barra laterale.
 - **Consigliati per te:** locandine dei titoli disponibili sui tuoi servizi.
 
 **Si adatta al televisore.** L'interfaccia si ridimensiona da sola in base alla risoluzione reale dello schermo: se cambi TV (720p, 1080p, 4K) non serve toccare nulla.

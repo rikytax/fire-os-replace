@@ -18,6 +18,7 @@ private val SHORTCUTS = listOf(
     ShortcutSpec("Disney+", "Cartoni, Marvel, Star Wars", 0xFF113CCF, listOf("com.disney.disneyplus", "Disney")),
     ShortcutSpec("Jellyfin", "La tua libreria di film", 0xFF6B4FBB, listOf("org.jellyfin.androidtv", "Jellyfin")),
     ShortcutSpec("YouTube", "Video e musica", 0xFFD32F2F, listOf("org.smarttube.stable", "com.amazon.firetv.youtube")),
+    ShortcutSpec("Spotify", "Musica e podcast", 0xFF1DB954, listOf("com.spotify.tv.android", "Spotify")),
     ShortcutSpec("BuddyFit", "La tua app", 0xFF1FA67A, listOf("BuddyFit")),
 )
 
