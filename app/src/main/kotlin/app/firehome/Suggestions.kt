@@ -19,6 +19,8 @@ data class Suggestion(
     val year: String,
     val rating: Double,
     val posterUrl: String?,
+    val backdropUrl: String?,
+    val overview: String,
     val providers: List<String>,
 )
 
@@ -73,6 +75,8 @@ private fun fetch(key: String): List<Suggestion> {
             year = date.take(4),
             rating = o.optDouble("vote_average", 0.0),
             posterUrl = o.optString("poster_path").ifEmpty { null }?.let { "https://image.tmdb.org/t/p/w342$it" },
+            backdropUrl = o.optString("backdrop_path").ifEmpty { null }?.let { "https://image.tmdb.org/t/p/w780$it" },
+            overview = o.optString("overview"),
             providers = providers,
         )
     }
@@ -93,7 +97,8 @@ private fun toJson(list: List<Suggestion>) = JSONArray().also { array ->
         array.put(
             JSONObject()
                 .put("title", it.title).put("kind", it.kind).put("year", it.year).put("rating", it.rating)
-                .put("poster", it.posterUrl ?: "").put("providers", JSONArray(it.providers)),
+                .put("poster", it.posterUrl ?: "").put("backdrop", it.backdropUrl ?: "").put("overview", it.overview)
+                .put("providers", JSONArray(it.providers)),
         )
     }
 }
@@ -107,6 +112,8 @@ private fun parse(array: JSONArray): List<Suggestion> = (0 until array.length())
         year = o.optString("year"),
         rating = o.optDouble("rating", 0.0),
         posterUrl = o.optString("poster").ifEmpty { null },
+        backdropUrl = o.optString("backdrop").ifEmpty { null },
+        overview = o.optString("overview"),
         providers = (0 until providers.length()).map { i -> providers.getString(i) },
     )
 }

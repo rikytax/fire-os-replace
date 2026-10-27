@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -41,8 +43,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -64,11 +68,15 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,36 +90,51 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-// Pensata per lo schermo della Fire Stick: circa 960 x 540 dp. Tutto scorre, così nulla viene tagliato.
-private val Bg = Color(0xFF0A1024)
+// Palette "ghiaccio": blu notte con azzurro. Il disegno è pensato per 960 x 540 dp e si scala da solo (vedi FireTheme).
+private val BgDeep = Color(0xFF0A0E1A)
+private val SurfaceDim = Color(0xFF0F1524)
+private val ContainerLow = Color(0xFF111828)
+private val ContainerHigh = Color(0xFF1A2438)
+private val Primary = Color(0xFF7DD3FC)
+private val PrimaryContainer = Color(0xFF0E4D6E)
+private val PrimaryFixed = Color(0xFFC8EAFF)
+private val OnPrimary = Color(0xFF001F2E)
+private val OnSurface = Color(0xFFE0E8F0)
+private val OnVariant = Color(0xFFA0B4C4)
+private val OutlineVariant = Color(0xFF2A3A48)
 private val Neutral = Color.Unspecified
-private val Accent = Color(0xFF4F7DFF)
-private val Amber = Color(0xFFB7791F)
+private val Amber = Color(0xFFE5A00D)
+
+private const val DESIGN_WIDTH_DP = 960f
+private const val DESIGN_HEIGHT_DP = 540f
 
 /**
- * Sfondo "aurora": un gradiente scuro con tre aloni di colore. Il vetro dei tile è fatto di sole trasparenze
- * e gradienti (niente sfocatura reale, che su una Fire Stick scatterebbe).
+ * Sfondo scuro con un alone azzurro in alto. Niente sfocature (costose su una Fire Stick): solo gradienti.
+ * La scala si adatta alla risoluzione reale: se cambi TV, 720p o 4K, tutto si ridimensiona da solo
+ * perché l'interfaccia occupa sempre lo stesso "spazio di progetto" di 960 x 540.
  */
 @Composable
 fun FireTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Bg)) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Brush.linearGradient(listOf(Color(0xFF0A1024), Color(0xFF131B3F), Color(0xFF1E1240))))
-                .drawBehind {
-                    fun halo(color: Color, x: Float, y: Float, radius: Float) = drawRect(
-                        Brush.radialGradient(
-                            listOf(color, Color.Transparent),
-                            center = Offset(size.width * x, size.height * y),
-                            radius = size.minDimension * radius,
-                        ),
-                    )
-                    halo(Color(0x553B6CFF), 0.12f, 0.05f, 0.9f)
-                    halo(Color(0x558A3FFC), 0.95f, 0.95f, 1.0f)
-                    halo(Color(0x3319C2B8), 0.70f, 0.15f, 0.6f)
-                },
-        ) { content() }
+    val configuration = LocalConfiguration.current
+    val base = LocalDensity.current
+    val factor = minOf(configuration.screenWidthDp / DESIGN_WIDTH_DP, configuration.screenHeightDp / DESIGN_HEIGHT_DP).coerceIn(0.6f, 2.5f)
+    CompositionLocalProvider(LocalDensity provides Density(base.density * factor, base.fontScale)) {
+        MaterialTheme(colorScheme = darkColorScheme(background = BgDeep, surface = SurfaceDim)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(BgDeep)
+                    .drawBehind {
+                        drawRect(
+                            Brush.radialGradient(
+                                listOf(Primary.copy(alpha = 0.10f), Color.Transparent),
+                                center = Offset(size.width * 0.30f, 0f),
+                                radius = size.width * 0.55f,
+                            ),
+                        )
+                    },
+            ) { content() }
+        }
     }
 }
 
@@ -123,24 +146,22 @@ private fun rememberInitialFocus(): FocusRequester {
     return requester
 }
 
-// --- vetro ------------------------------------------------------------------
+// --- riquadro -----------------------------------------------------------------
 
-/** Un riquadro di vetro: trasparente, con bordo luminoso e riflesso; al focus si alza con una molla e si accende. */
+/** Riquadro scuro con bordo azzurro tenue; al focus il bordo si accende, compare un bagliore e si ingrandisce un poco. */
 @Composable
-private fun Glass(
+private fun Panel(
     modifier: Modifier = Modifier,
     tint: Color = Neutral,
-    corner: Dp = 20.dp,
+    corner: Dp = 16.dp,
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.62f, stiffness = 380f), label = "glass-scale")
-    val lift by animateFloatAsState(if (focused) 1f else 0f, tween(220), label = "glass-lift")
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f, spring(dampingRatio = 0.7f, stiffness = 420f), label = "panel-scale")
+    val lift by animateFloatAsState(if (focused) 1f else 0f, tween(160), label = "panel-lift")
     val shape = RoundedCornerShape(corner)
-    val tinted = tint != Neutral
-    val glow = if (tinted) tint else Color.White
     Box(
         modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -149,31 +170,26 @@ private fun Glass(
             .drawBehind {
                 if (lift > 0f) {
                     drawCircle(
-                        Brush.radialGradient(listOf(glow.copy(alpha = 0.40f * lift), Color.Transparent), center = center, radius = size.maxDimension * 0.8f),
-                        radius = size.maxDimension * 0.8f,
+                        Brush.radialGradient(listOf(Primary.copy(alpha = 0.30f * lift), Color.Transparent), center = center, radius = size.maxDimension * 0.75f),
+                        radius = size.maxDimension * 0.75f,
                     )
                 }
             }
-            .border(
-                1.2.dp,
-                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f + 0.55f * lift), Color.White.copy(alpha = 0.05f + 0.10f * lift))),
-                shape,
-            )
+            .border((1f + lift).dp, lerp(Primary.copy(alpha = 0.16f), Primary, lift), shape)
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f + 0.12f * lift), Color.White.copy(alpha = 0.06f + 0.06f * lift))))
-            .then(if (tinted) Modifier.background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.42f), tint.copy(alpha = 0.14f)))) else Modifier)
+            .background(Brush.verticalGradient(listOf(ContainerHigh.copy(alpha = 0.62f), ContainerLow.copy(alpha = 0.88f))))
+            .then(if (tint != Neutral) Modifier.background(tint.copy(alpha = 0.16f)) else Modifier)
             .clickable(onClick = onClick),
         content = content,
     )
 }
 
-// --- icone ------------------------------------------------------------------
+// --- icone --------------------------------------------------------------------
 
 private enum class Glyph { Tv, Cast, Grid, Gear, House, Play }
 
 @Composable
-private fun GlyphIcon(glyph: Glyph, s: Dp) {
-    val color = Color.White
+private fun GlyphIcon(glyph: Glyph, s: Dp, color: Color = Color.White) {
     when (glyph) {
         Glyph.Gear -> Icon(Icons.Filled.Settings, null, Modifier.size(s), tint = color)
         Glyph.House -> Icon(Icons.Filled.Home, null, Modifier.size(s), tint = color)
@@ -209,8 +225,11 @@ private fun GlyphIcon(glyph: Glyph, s: Dp) {
 
 @Composable
 private fun GlyphBadge(glyph: Glyph, badge: Dp) {
-    Box(Modifier.size(badge).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-        GlyphIcon(glyph, badge * 0.55f)
+    Box(
+        Modifier.size(badge).clip(RoundedCornerShape(badge * 0.28f)).background(PrimaryContainer.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(glyph, badge * 0.55f, Primary)
     }
 }
 
@@ -224,13 +243,41 @@ private fun AppIcon(pkg: String, s: Dp) {
     if (bitmap != null) {
         Image(bitmap, null, Modifier.size(s).clip(RoundedCornerShape(s * 0.22f)))
     } else {
-        Box(Modifier.size(s).clip(RoundedCornerShape(s * 0.22f)).background(Color.White.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
-            Text(pkg.substringAfterLast('.').take(1).uppercase(), fontSize = 20.sp, color = Color.White)
+        Box(Modifier.size(s).clip(RoundedCornerShape(s * 0.22f)).background(ContainerHigh), contentAlignment = Alignment.Center) {
+            Text(pkg.substringAfterLast('.').take(1).uppercase(), fontSize = 20.sp, color = OnSurface)
         }
     }
 }
 
-// --- elementi della Home ------------------------------------------------------
+@Composable
+private fun Chip(text: String, color: Color = OnVariant, filled: Boolean = false) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (filled) color.copy(alpha = 0.18f) else ContainerHigh.copy(alpha = 0.8f))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    ) {
+        Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = color, maxLines = 1)
+    }
+}
+
+// --- immagini di rete -----------------------------------------------------------
+
+private val posterCache = LruCache<String, ImageBitmap>(24)
+
+@Composable
+private fun rememberRemoteImage(url: String?): ImageBitmap? {
+    val state = produceState<ImageBitmap?>(initialValue = url?.let { posterCache.get(it) }, url) {
+        if (url != null && value == null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching { URL(url).openStream().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull()
+            }?.also { posterCache.put(url, it) }
+        }
+    }
+    return state.value
+}
+
+// --- schede ---------------------------------------------------------------------
 
 /** Scheda larga: icona a sinistra, titolo e spiegazione a destra. */
 @Composable
@@ -241,20 +288,22 @@ private fun WideCard(
     glyph: Glyph? = null,
     iconPkg: String? = null,
     tint: Color = Neutral,
+    compact: Boolean = false,
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
-    Glass(modifier, tint, focusRequester = focusRequester, onClick = onClick) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    val iconSize = if (compact) 34.dp else 44.dp
+    Panel(modifier, tint, focusRequester = focusRequester, onClick = onClick) {
+        Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
-                iconPkg != null -> AppIcon(iconPkg, 44.dp)
-                glyph != null -> GlyphBadge(glyph, 44.dp)
+                iconPkg != null -> AppIcon(iconPkg, iconSize)
+                glyph != null -> GlyphBadge(glyph, iconSize)
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.96f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, fontSize = if (compact) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (desc != null) {
-                    Text(desc, fontSize = 13.sp, color = Color.White.copy(alpha = 0.68f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(desc, fontSize = if (compact) 11.sp else 12.sp, color = OnVariant, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -273,54 +322,163 @@ private fun AppCard(
     focusRequester: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
-    Glass(modifier, tint, focusRequester = focusRequester, onClick = onClick) {
+    Panel(modifier, tint, focusRequester = focusRequester, onClick = onClick) {
         Column(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             when {
                 iconPkg != null -> AppIcon(iconPkg, 44.dp)
                 glyph != null -> GlyphBadge(glyph, 44.dp)
             }
             Spacer(Modifier.height(6.dp))
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.96f), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             if (desc != null) {
-                Text(desc, fontSize = 11.sp, color = Color.White.copy(alpha = 0.66f), maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                Text(desc, fontSize = 10.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             }
         }
     }
 }
 
-private val posterCache = LruCache<String, ImageBitmap>(24)
-
-@Composable
-private fun rememberPoster(url: String?): ImageBitmap? {
-    val state = produceState<ImageBitmap?>(initialValue = url?.let { posterCache.get(it) }, url) {
-        if (url != null && value == null) {
-            value = withContext(Dispatchers.IO) {
-                runCatching { URL(url).openStream().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull()
-            }?.also { posterCache.put(url, it) }
-        }
-    }
-    return state.value
-}
-
 @Composable
 private fun PosterCard(s: Suggestion, onClick: () -> Unit) {
-    val poster = rememberPoster(s.posterUrl)
-    Glass(Modifier.size(112.dp, 168.dp), corner = 16.dp, onClick = onClick) {
+    val poster = rememberRemoteImage(s.posterUrl)
+    Panel(Modifier.size(104.dp, 156.dp), corner = 14.dp, onClick = onClick) {
         if (poster != null) {
             Image(poster, s.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.40f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.88f))))
         Column(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
-            Text(s.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(s.title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val where = s.providers.firstOrNull()?.let(::shortProvider) ?: ""
-            Text("$where · ★ ${String.format(Locale.ITALY, "%.1f", s.rating)}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.72f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$where · ★ ${String.format(Locale.ITALY, "%.1f", s.rating)}", fontSize = 10.sp, color = OnVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
+// --- banner in primo piano ----------------------------------------------------------
+
 @Composable
-private fun SectionLabel(text: String) {
-    Text(text.uppercase(Locale.ITALY), fontSize = 12.sp, letterSpacing = 1.6.sp, color = Color.White.copy(alpha = 0.55f))
+private fun HeroButton(label: String, glyph: Glyph?, primary: Boolean, focusRequester: FocusRequester? = null, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.7f, stiffness = 420f), label = "hero-button")
+    val shape = RoundedCornerShape(12.dp)
+    val foreground = if (primary) OnPrimary else OnSurface
+    Row(
+        Modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else OutlineVariant, shape)
+            .clip(shape)
+            .background(if (primary) Primary else ContainerHigh.copy(alpha = 0.85f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (glyph != null) {
+            GlyphIcon(glyph, 18.dp, foreground)
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = foreground, maxLines = 1)
+    }
+}
+
+@Composable
+private fun Hero(
+    spot: Suggestion?,
+    watchLabel: String,
+    focus: FocusRequester,
+    onWatch: () -> Unit,
+    onNext: () -> Unit,
+    onLive: () -> Unit,
+    onApps: () -> Unit,
+) {
+    val backdrop = rememberRemoteImage(spot?.backdropUrl)
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(184.dp)
+            .border(1.dp, Primary.copy(alpha = 0.22f), shape)
+            .clip(shape)
+            .background(Brush.horizontalGradient(listOf(SurfaceDim, ContainerLow, SurfaceDim))),
+    ) {
+        if (backdrop != null) {
+            Image(backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.42f)
+        }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, SurfaceDim))))
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(SurfaceDim, SurfaceDim.copy(alpha = 0.6f), Color.Transparent))))
+        Column(Modifier.align(Alignment.BottomStart).padding(22.dp).widthIn(max = 520.dp)) {
+            if (spot != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Chip("In primo piano", Primary, filled = true)
+                    Chip(spot.kind)
+                    if (spot.year.isNotEmpty()) Chip(spot.year)
+                    Chip("★ ${String.format(Locale.ITALY, "%.1f", spot.rating)}")
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(spot.title, fontSize = 28.sp, fontWeight = FontWeight.Black, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (spot.overview.isNotEmpty()) {
+                    Text(spot.overview, fontSize = 12.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HeroButton(watchLabel, Glyph.Play, primary = true, focusRequester = focus, onClick = onWatch)
+                    HeroButton("Altro titolo", null, primary = false, onClick = onNext)
+                }
+            } else {
+                Chip(greeting(), Primary, filled = true)
+                Spacer(Modifier.height(8.dp))
+                Text("Cosa guardiamo stasera?", fontSize = 28.sp, fontWeight = FontWeight.Black, color = OnSurface, maxLines = 1)
+                Text("Le dirette, le tue app e, con la chiave TMDB, i consigli sui film e le serie del momento.", fontSize = 12.sp, color = OnVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HeroButton("TV Live", Glyph.Tv, primary = true, focusRequester = focus, onClick = onLive)
+                    HeroButton("Le tue app", Glyph.Grid, primary = false, onClick = onApps)
+                }
+            }
+        }
+    }
+}
+
+// --- barra laterale e intestazione -------------------------------------------------------
+
+enum class Section { Home, Live, Apps }
+
+@Composable
+private fun RailItem(label: String, glyph: Glyph, selected: Boolean, onClick: () -> Unit) {
+    Panel(Modifier.fillMaxWidth().height(62.dp), corner = 14.dp, onClick = onClick) {
+        if (selected) Box(Modifier.fillMaxSize().background(PrimaryContainer.copy(alpha = 0.9f)))
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            GlyphIcon(glyph, 22.dp, if (selected) PrimaryFixed else OnVariant)
+            Spacer(Modifier.height(3.dp))
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = if (selected) PrimaryFixed else OnVariant, maxLines = 1)
+        }
+    }
+}
+
+/** Barra laterale con le sezioni, sempre con icona e nome, e il contenuto accanto. */
+@Composable
+fun Shell(
+    selected: Section?,
+    onHome: () -> Unit,
+    onLive: () -> Unit,
+    onApps: () -> Unit,
+    onSettings: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Row(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.width(84.dp).fillMaxHeight().background(SurfaceDim.copy(alpha = 0.92f)).padding(horizontal = 8.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            RailItem("Home", Glyph.House, selected == Section.Home, onHome)
+            RailItem("TV Live", Glyph.Tv, selected == Section.Live, onLive)
+            RailItem("App", Glyph.Grid, selected == Section.Apps, onApps)
+            Spacer(Modifier.weight(1f))
+            RailItem("Impostazioni", Glyph.Gear, false, onSettings)
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+    }
 }
 
 @Composable
@@ -336,9 +494,33 @@ private fun Clock() {
     val date = remember(now) {
         SimpleDateFormat("EEEE d MMMM", Locale.ITALY).format(now).replaceFirstChar { it.uppercase() }
     }
-    Column {
-        Text(time, fontSize = 52.sp, fontWeight = FontWeight.ExtraLight, color = Color.White.copy(alpha = 0.96f))
-        Text(date, fontSize = 15.sp, fontWeight = FontWeight.Light, color = Color.White.copy(alpha = 0.65f))
+    Column(horizontalAlignment = Alignment.End) {
+        Text(time, fontSize = 30.sp, fontWeight = FontWeight.Medium, color = OnSurface)
+        Text(date, fontSize = 12.sp, color = OnVariant)
+    }
+}
+
+@Composable
+private fun StatusBar() {
+    val context = LocalContext.current
+    val network by produceState(networkLabel(context)) {
+        while (true) {
+            delay(15_000)
+            value = networkLabel(context)
+        }
+    }
+    val memory by produceState(freeMemoryMb(context)) {
+        while (true) {
+            delay(15_000)
+            value = freeMemoryMb(context)
+        }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Chip(network, Primary, filled = true)
+            Chip("RAM libera $memory MB")
+        }
+        Clock()
     }
 }
 
@@ -349,7 +531,15 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
     else -> "Buonanotte"
 }
 
-// --- schermate ----------------------------------------------------------------
+@Composable
+private fun SectionTitle(text: String, note: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+        if (note != null) Chip(note)
+    }
+}
+
+// --- schermate ----------------------------------------------------------------------------
 
 @Composable
 fun HomeScreen(
@@ -358,55 +548,67 @@ fun HomeScreen(
     shortcuts: List<Shortcut>,
     casa: List<String>,
     suggestions: List<Suggestion>,
+    watchLabel: (Suggestion) -> String,
     onLive: () -> Unit,
     onLast: () -> Unit,
     onApp: (InstalledApp) -> Unit,
     onAllApps: () -> Unit,
     onCasa: (Int) -> Unit,
-    onSettings: () -> Unit,
     onMirror: () -> Unit,
     onSuggestion: (Suggestion) -> Unit,
 ) {
     val focus = rememberInitialFocus()
+    var heroIndex by remember { mutableIntStateOf(0) }
+    val spots = suggestions.filter { it.backdropUrl != null }.ifEmpty { suggestions }
+    val spot = if (spots.isEmpty()) null else spots[heroIndex % spots.size]
     val liveDesc = if (channels.any { it.stream != null }) "I tuoi canali e le dirette ufficiali" else "Rai, Mediaset e La7 in diretta"
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 22.dp),
+        contentPadding = PaddingValues(horizontal = 26.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { StatusBar() }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                Clock()
-                Text(greeting(), fontSize = 22.sp, fontWeight = FontWeight.ExtraLight, color = Color.White.copy(alpha = 0.8f))
-            }
+            Hero(
+                spot = spot,
+                watchLabel = spot?.let(watchLabel) ?: "",
+                focus = focus,
+                onWatch = { spot?.let(onSuggestion) },
+                onNext = { heroIndex++ },
+                onLive = onLive,
+                onApps = onAllApps,
+            )
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                WideCard("TV Live", liveDesc, Modifier.size(300.dp, 100.dp), glyph = Glyph.Tv, tint = Accent, focusRequester = focus, onClick = onLive)
-                if (last != null) {
-                    WideCard("Riprendi", last.name, Modifier.size(220.dp, 100.dp), glyph = Glyph.Play, onClick = onLast)
-                }
-                WideCard("Duplica schermo", "Dal tablet alla TV", Modifier.size(220.dp, 100.dp), glyph = Glyph.Cast, onClick = onMirror)
-            }
-        }
-        item { SectionLabel("Le tue app") }
+        item { SectionTitle("Le tue app", "Avvio rapido") }
         item {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
             ) {
                 items(shortcuts) { s ->
-                    AppCard(s.label, s.desc, Modifier.size(132.dp, 124.dp), iconPkg = s.app.pkg, tint = s.color) { onApp(s.app) }
+                    AppCard(s.label, s.desc, Modifier.size(128.dp, 120.dp), iconPkg = s.app.pkg, tint = s.color) { onApp(s.app) }
                 }
+                item { AppCard("Tutte le app", "Tutto ciò che è installato", Modifier.size(128.dp, 120.dp), glyph = Glyph.Grid, onClick = onAllApps) }
+            }
+        }
+        item { SectionTitle("Controlli rapidi") }
+        item {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+            ) {
+                item { WideCard("TV Live", liveDesc, Modifier.size(250.dp, 64.dp), glyph = Glyph.Tv, tint = Primary, compact = true, onClick = onLive) }
+                if (last != null) {
+                    item { WideCard("Riprendi", last.name, Modifier.size(200.dp, 64.dp), glyph = Glyph.Play, compact = true, onClick = onLast) }
+                }
+                item { WideCard("Duplica schermo", "Dal tablet alla TV", Modifier.size(220.dp, 64.dp), glyph = Glyph.Cast, compact = true, onClick = onMirror) }
                 itemsIndexed(casa) { i, name ->
-                    AppCard(name, "Domotica", Modifier.size(132.dp, 124.dp), glyph = Glyph.House, tint = Amber) { onCasa(i) }
+                    WideCard(name, "Domotica", Modifier.size(200.dp, 64.dp), glyph = Glyph.House, tint = Amber, compact = true) { onCasa(i) }
                 }
-                item { AppCard("Tutte le app", "Tutto ciò che è installato", Modifier.size(132.dp, 124.dp), glyph = Glyph.Grid, onClick = onAllApps) }
-                item { AppCard("Impostazioni", "Wi-Fi, schermo e suoni", Modifier.size(132.dp, 124.dp), glyph = Glyph.Gear, onClick = onSettings) }
             }
         }
         if (suggestions.isNotEmpty()) {
-            item { SectionLabel("Consigliati per te · dati TMDB e JustWatch") }
+            item { SectionTitle("Consigliati per te", "Dati TMDB e JustWatch") }
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -433,17 +635,17 @@ fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (
     val groups = channels.groupBy { it.group }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 24.dp),
+        contentPadding = PaddingValues(horizontal = 26.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Column {
-                Text("TV Live", fontSize = 34.sp, fontWeight = FontWeight.ExtraLight, color = Color.White.copy(alpha = 0.96f))
-                Text("Scegli un canale", fontSize = 15.sp, fontWeight = FontWeight.Light, color = Color.White.copy(alpha = 0.65f))
+                Text("TV Live", fontSize = 30.sp, fontWeight = FontWeight.Black, color = OnSurface)
+                Text("Scegli un canale", fontSize = 13.sp, color = OnVariant)
             }
         }
         groups.forEach { (group, list) ->
-            item { SectionLabel(group) }
+            item { SectionTitle(group) }
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -454,7 +656,7 @@ fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (
                         WideCard(
                             c.name,
                             subtitleOf(c, installed),
-                            Modifier.size(250.dp, 92.dp),
+                            Modifier.size(240.dp, 84.dp),
                             glyph = if (pkg == null) Glyph.Tv else null,
                             iconPkg = pkg,
                             tint = Color(c.color),
@@ -471,9 +673,9 @@ fun LiveScreen(channels: List<Channel>, installed: List<InstalledApp>, onOpen: (
 fun AllAppsScreen(apps: List<InstalledApp>, onApp: (InstalledApp) -> Unit, onAmazon: () -> Unit) {
     val focus = rememberInitialFocus()
     LazyVerticalGrid(
-        GridCells.Adaptive(130.dp),
+        GridCells.Adaptive(124.dp),
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 24.dp),
+        contentPadding = PaddingValues(horizontal = 26.dp, vertical = 22.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -481,13 +683,13 @@ fun AllAppsScreen(apps: List<InstalledApp>, onApp: (InstalledApp) -> Unit, onAma
             AppCard(
                 a.label,
                 null,
-                Modifier.fillMaxWidth().height(110.dp),
+                Modifier.fillMaxWidth().height(100.dp),
                 iconPkg = a.pkg,
                 focusRequester = if (a === apps.first()) focus else null,
             ) { onApp(a) }
         }
         item {
-            AppCard("Home Amazon", "Resta finché apri un'app", Modifier.fillMaxWidth().height(110.dp), glyph = Glyph.House, onClick = onAmazon)
+            AppCard("Home Amazon", "Resta finché apri un'app", Modifier.fillMaxWidth().height(100.dp), glyph = Glyph.House, onClick = onAmazon)
         }
     }
 }

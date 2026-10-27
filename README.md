@@ -103,12 +103,18 @@ Salvala come `playlist.m3u` e caricala: `adb push playlist.m3u /sdcard/Android/d
 
 ## La Home
 
-Layout pensato per lo schermo della Fire Stick (circa 960 × 540 punti), che scorre verso il basso: nulla viene mai tagliato.
+Stile "ghiaccio": blu notte con azzurro, ispirato al tuo mockup ma adattato a ciò che una Fire Stick può davvero fare. Niente sfocature costose: solo gradienti, bordi tenui e un bagliore al focus.
 
-- **In alto:** orologio e saluto.
-- **Schede grandi:** *TV Live*, *Riprendi* (l'ultimo canale) e *Duplica schermo*, ognuna con icona e una riga che spiega cosa fa.
-- **Le tue app:** l'icona vera di ogni app, il nome e una descrizione (Netflix, Prime Video, Disney+, Jellyfin, YouTube, BuddyFit), poi *Tutte le app* e *Impostazioni*. Scendendo col telecomando compaiono i **suggerimenti**.
-- **Consigliati per te:** locandine di film e serie di tendenza in Italia, **solo quelli che puoi guardare** su Netflix, Prime Video, Disney+, RaiPlay o Infinity. Premendo OK si apre l'app giusta e un messaggio ti dice cosa cercare: non esiste un collegamento diretto al titolo.
+- **Barra laterale** (sempre con icona e nome): *Home*, *TV Live*, *App*, *Impostazioni*.
+- **In alto:** stato reale della rete (*Wi-Fi 5 GHz*, *Ethernet*...), la **RAM libera** e l'orologio.
+- **Banner in primo piano:** un film o una serie di tendenza in Italia, con locandina di sfondo, voto, trama e il pulsante **Guarda su Netflix / Prime Video / Disney+...** (apre l'app giusta e ti dice cosa cercare; "Altro titolo" passa al successivo). Senza la chiave TMDB il banner diventa un saluto con i pulsanti *TV Live* e *Le tue app*.
+- **Le tue app:** l'icona vera di ogni app, il nome e una descrizione, poi *Tutte le app*.
+- **Controlli rapidi:** *TV Live*, *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica.
+- **Consigliati per te:** locandine dei titoli disponibili sui tuoi servizi.
+
+**Si adatta al televisore.** L'interfaccia si ridimensiona da sola in base alla risoluzione reale dello schermo: se cambi TV (720p, 1080p, 4K) non serve toccare nulla.
+
+**Cosa ho lasciato fuori dal mockup, e perché:** gli *ingressi HDMI*, la PS5, le *AirPods* e il *Night Sound* (una Fire Stick non ha ingressi e non espone queste funzioni), e le barre di avanzamento di *Continua a guardare* (Netflix e le altre app non dicono dove sei arrivato).
 
 ### Attivare i suggerimenti (una volta sola, gratis)
 
@@ -123,7 +129,13 @@ Senza chiave la riga semplicemente non compare. *Questo prodotto usa l'API di TM
 
 ### Aggiornare FireHome sulla Fire Stick
 
-Scarica `FireHome.apk` aggiornato dalla pagina *Releases* e lancia: `./pulisci-firestick.sh home 192.168.1.5` (con il tuo IP). Reinstalla l'app mantenendo impostazioni e playlist.
+Un solo comando, senza scaricare nulla a mano:
+
+```bash
+./pulisci-firestick.sh home 192.168.1.5
+```
+
+(con il tuo IP). Lo script scarica da solo l'ultima versione dalla Release: se il repository è privato usa la GitHub CLI (`gh`, già autenticata con `gh auth login`) e controlla lo SHA-256. Reinstalla l'app mantenendo impostazioni e playlist.
 
 ## Domotica (Home Assistant)
 

@@ -38,25 +38,41 @@ class MainActivity : ComponentActivity() {
             FireTheme {
                 // Il Back non chiude mai la Home: dalle altre schermate torna indietro, qui non fa nulla.
                 BackHandler { screen = Screen.Home }
-                when (val s = screen) {
-                    Screen.Home -> HomeScreen(
-                        channels = channels,
-                        last = channels.firstOrNull { it.name == lastName },
-                        shortcuts = apps.shortcuts(),
+                val current = screen
+                if (current is Screen.Playing) {
+                    PlayerScreen(current.channel, zap = ::zap)
+                } else {
+                    Shell(
+                        selected = when (current) {
+                            Screen.Live -> Section.Live
+                            Screen.AllApps -> Section.Apps
+                            else -> Section.Home
+                        },
+                        onHome = { screen = Screen.Home },
                         onLive = { screen = Screen.Live },
-                        onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
-                        onApp = ::launch,
-                        onAllApps = { screen = Screen.AllApps },
-                        casa = domotica?.actions?.map { it.name } ?: emptyList(),
-                        suggestions = suggestions,
-                        onCasa = ::runHomeAction,
+                        onApps = { screen = Screen.AllApps },
                         onSettings = ::openSettings,
-                        onMirror = ::openMirroring,
-                        onSuggestion = ::openSuggestion,
-                    )
-                    Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
-                    Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch, onAmazon = { HomeGuard.openAmazon(this) })
-                    is Screen.Playing -> PlayerScreen(s.channel, zap = ::zap)
+                    ) {
+                        when (current) {
+                            Screen.Live -> LiveScreen(channels, apps, onOpen = ::open)
+                            Screen.AllApps -> AllAppsScreen(apps, onApp = ::launch, onAmazon = { HomeGuard.openAmazon(this@MainActivity) })
+                            else -> HomeScreen(
+                                channels = channels,
+                                last = channels.firstOrNull { it.name == lastName },
+                                shortcuts = apps.shortcuts(),
+                                casa = domotica?.actions?.map { it.name } ?: emptyList(),
+                                suggestions = suggestions,
+                                watchLabel = ::watchLabel,
+                                onLive = { screen = Screen.Live },
+                                onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
+                                onApp = ::launch,
+                                onAllApps = { screen = Screen.AllApps },
+                                onCasa = ::runHomeAction,
+                                onMirror = ::openMirroring,
+                                onSuggestion = ::openSuggestion,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -121,6 +137,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launch(app: InstalledApp) = start(app.intent)
+
+    private fun watchLabel(s: Suggestion): String {
+        val target = s.providers.firstNotNullOfOrNull { apps.findApp(providerQueries(it)) }
+        return if (target != null) "Guarda su ${target.label}" else "Disponibile su ${s.providers.joinToString { shortProvider(it) }}"
+    }
 
     // Apre il servizio su cui il titolo è disponibile; non esiste un collegamento diretto al titolo, quindi lo si cerca lì.
     private fun openSuggestion(s: Suggestion) {

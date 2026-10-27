@@ -431,9 +431,12 @@ def find_apk(given):
         with urllib.request.urlopen(APK_URL, timeout=120) as r, open(apk, "wb") as f:
             shutil.copyfileobj(r, f)
     except Exception as e:
-        say(f"  non riesco a scaricare FireHome ({e}). Se il repository è privato, scarica FireHome.apk dalla pagina Releases")
-        say("  del repository e mettilo nella cartella Download (o accanto a questo script), poi rilancia: salto l'app per ora.")
-        return None
+        apk = download_with_gh(apk)  # repository privato: con 'gh' (GitHub CLI) già autenticato si scarica comunque
+        if apk is None:
+            say(f"  non riesco a scaricare FireHome ({e}). Se il repository è privato: 'sudo dnf install gh' e 'gh auth login',")
+            say("  oppure scarica FireHome.apk dalla pagina Releases e mettilo in ~/Download: salto l'app per ora.")
+            return None
+        return apk
     try:
         with urllib.request.urlopen(APK_URL + ".sha256", timeout=30) as r:
             expected = r.read().decode().split()[0].lower()
@@ -444,6 +447,26 @@ def find_apk(given):
         apk.unlink()
         die("Il file scaricato non corrisponde al controllo SHA-256: non lo installo.")
     say("  controllo SHA-256 riuscito")
+    return apk
+
+
+def download_with_gh(apk):
+    """Scarica l'ultima Release con la GitHub CLI (funziona anche se il repository è privato) e controlla lo SHA-256."""
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+    say("  provo con la GitHub CLI (gh)...")
+    with tempfile.TemporaryDirectory() as tmp:
+        r = subprocess.run([gh, "release", "download", "--repo", "rikytax/fire-os-replace", "--pattern", "FireHome.apk*",
+                            "--dir", tmp, "--clobber"], capture_output=True, text=True, timeout=300)
+        got, checksum = Path(tmp) / "FireHome.apk", Path(tmp) / "FireHome.apk.sha256"
+        if r.returncode != 0 or not got.exists():
+            say(f"  gh non è riuscita: {(r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else 'nessuna risposta'}")
+            return None
+        if checksum.exists() and hashlib.sha256(got.read_bytes()).hexdigest() != checksum.read_text().split()[0].lower():
+            die("Il file scaricato non corrisponde al controllo SHA-256: non lo installo.")
+        shutil.copyfile(got, apk)
+    say("  scaricato con gh, controllo SHA-256 riuscito")
     return apk
 
 
