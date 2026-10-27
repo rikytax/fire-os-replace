@@ -24,7 +24,7 @@
 #   com.amazon.device.logmanager, com.amazon.device.crashmanager, com.amazon.diode,
 #   com.fireos.usagestats.proxy, com.amazon.ftvads.deeplinking, com.amazon.tv.csapp
 #
-# Sezioni: [base] sempre; [stick] con --stick; [extras] con --extras.
+# Sezioni: [base] sempre; [stick] con --stick; [musica] con --alexa-musica; [extras] con --extras.
 
 [base]
 # Telemetria e statistiche
@@ -119,20 +119,25 @@ com.amazon.franktvinput
 com.amazon.hedwig                          # Fire TV Channels
 com.amazon.tv.localgallery                 # foto e video da USB (una Fire Stick non ha la porta)
 
-[extras]
-# Opzionali. Alexa oltre alla ricerca vocale (sveglie, timer, musica, audio multi-room, casa smart).
-# La ricerca vocale col tasto del telecomando continua a funzionare.
-com.amazon.tv.alexaalerts
-com.amazon.tv.alexanotifications
-com.amazon.alexa.externalmediaplayer.fireos
+[musica]
+# Con --alexa-musica. Musica di Alexa e audio multi-room (circa 60 MB di RAM misurati su una Fire Stick 3a gen).
+# Si perde "Alexa, metti musica" e la riproduzione sincronizzata su più Echo. La ricerca vocale resta.
 com.amazon.alexamediaplayer.runtime.ftv
-com.amazon.aiondec
-com.amazon.firetv.androidskillconnectioncapability
+com.amazon.alexa.externalmediaplayer.fireos
 com.amazon.spotify.mediabrowserservice
 com.amazon.audiohome
 com.amazon.whad
 com.amazon.whasettings
 com.amazon.wha.mediabrowserservice
+
+[extras]
+# Opzionali. Alexa oltre alla ricerca vocale (sveglie, timer, casa smart). ATTENZIONE: com.amazon.aca, in fondo, può
+# togliere la voce di Alexa (i progetti di riferimento non concordano): se succede, 'restore'.
+# La ricerca vocale col tasto del telecomando continua a funzionare.
+com.amazon.tv.alexaalerts
+com.amazon.tv.alexanotifications
+com.amazon.aiondec
+com.amazon.firetv.androidskillconnectioncapability
 com.amazon.aca
 com.amazon.rtcsessioncontroller
 com.amazon.smarthomemapviewapp
@@ -157,6 +162,19 @@ com.amazon.client.metrics
 com.amazon.minerva.client.api
 
 [keep]
+# Telecomando, CEC, ingressi, Bluetooth (dumbtv li indica come essenziali)
+com.amazon.tv.devicecontrol
+com.amazon.tv.devicecontrolsettings
+com.amazon.tv.keypolicymanager
+com.amazon.tv.routing
+com.amazon.tv.inputpreference.service
+com.amazon.fireinputdevices
+com.amazon.autopairservice
+com.amazon.device.bluetoothpa
+com.amazon.device.blepa
+com.amazon.device.services
+com.amazon.device.messaging
+com.amazon.webview.chromium
 # Prefissi: ciò che coincide o inizia così (es. com.amazon.tv.settings -> com.amazon.tv.settings.v2)
 # non viene mai disattivato, anche se finisse per errore in un'altra sezione, e non compare nel report.
 com.amazon.tv.launcher

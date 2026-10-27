@@ -546,8 +546,8 @@ fun HomeScreen(
     var heroIndex by remember { mutableIntStateOf(0) }
     val spots = suggestions.filter { it.backdropUrl != null }.ifEmpty { suggestions }
     val spot = if (spots.isEmpty()) null else spots[heroIndex % spots.size]
-    val gridItems = shortcuts.map { s -> GridItem(s.label, s.desc, s.app.pkg, null, s.color) { onApp(s.app) } } +
-        GridItem("Tutte le app", "Tutto ciò che è installato", null, Glyph.Grid, Neutral, onAllApps)
+    val gridItems = shortcuts.map { s -> GridItem(s.label, null, s.app.pkg, null, s.color) { onApp(s.app) } } +
+        GridItem("Tutte le app", null, null, Glyph.Grid, Neutral, onAllApps)
     val columns = 4
     LazyColumn(
         Modifier.fillMaxSize(),

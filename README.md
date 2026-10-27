@@ -55,7 +55,7 @@ python3 scripts/firestick.py restore    # torna a com'era prima
 python3 scripts/firestick.py adb-off    # spegne il Debug ADB a lavoro finito
 ```
 
-Opzioni: `--extras` (toglie anche Alexa oltre alla ricerca vocale: timer, multi-room, Silk, Ambient), `--no-home` (solo pulizia), `--apk FILE`, `--reboot`, `--tv` (TV con Fire OS integrato, non una Fire Stick). Un IP o `usb` come ultimo argomento salta la ricerca automatica.
+Opzioni: `--alexa-musica` (toglie la musica di Alexa e l'audio multi-room: circa 60 MB di RAM misurati, la ricerca vocale resta), `--extras` (toglie anche sveglie e timer di Alexa, la parte smart home, Silk, Ambient e `aca`: **può togliere la voce di Alexa**, se succede `restore`), `--no-home` (solo pulizia), `--apk FILE`, `--reboot`, `--tv` (TV con Fire OS integrato, non una Fire Stick). Un IP o `usb` come ultimo argomento salta la ricerca automatica.
 
 > Il controllo settimanale funziona solo se il Debug ADB resta acceso. Se lo spegni con `adb-off` per sicurezza, il timer non riesce a raggiungere la Fire Stick e tace.
 
@@ -109,7 +109,7 @@ Stile "ghiaccio": blu notte con azzurro, ispirato al tuo mockup ma adattato a ci
 - **Barra laterale** (sempre con icona e nome): *Home*, *TV Live*, *App*, *Impostazioni*.
 - **In alto:** stato reale della rete (*Wi-Fi 5 GHz*, *Ethernet*...), la **RAM libera** e l'orologio.
 - **Banner in primo piano:** un film o una serie di tendenza in Italia, con locandina di sfondo, voto, trama e il pulsante **Guarda su Netflix / Prime Video / Disney+...** (apre l'app giusta e ti dice cosa cercare; "Altro titolo" passa al successivo). Compare solo se hai attivato la chiave TMDB: altrimenti non c'è nessun banner e le app salgono in cima.
-- **Le tue app:** una griglia a 4 colonne con tessere ampie: l'icona vera di ogni app, il nome e una descrizione (Netflix, Prime Video, Disney+, Jellyfin, YouTube, Spotify, BuddyFit), poi *Tutte le app*.
+- **Le tue app:** una griglia a 4 colonne con tessere ampie: l'icona vera di ogni app e il nome (Netflix, Prime Video, Disney+, Jellyfin, YouTube, Spotify, BuddyFit), poi *Tutte le app*.
 - **Controlli rapidi:** *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica. *TV Live* è nella barra laterale.
 - **Consigliati per te:** locandine dei titoli disponibili sui tuoi servizi.
 

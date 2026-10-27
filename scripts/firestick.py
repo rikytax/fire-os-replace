@@ -289,8 +289,8 @@ def is_kept(pkg, keep):
     return any(pkg == k or pkg.startswith(k + ".") for k in keep) or any(t in pkg.lower() for t in KEEP_TOKENS)
 
 
-def wanted(sections, stick, extras):
-    names = ["base"] + (["stick"] if stick else []) + (["extras"] if extras else [])
+def wanted(sections, stick, extras, musica=False):
+    names = ["base"] + (["stick"] if stick else []) + (["musica"] if musica else []) + (["extras"] if extras else [])
     return list(dict.fromkeys(p for name in names for p in sections.get(name, [])))
 
 
@@ -763,7 +763,10 @@ def run_ram(tv, sections):
     if not procs:
         die("Non riesco a leggere la memoria dei processi su questa Fire Stick.")
     keep = sections.get("keep", [])
-    listed = set(wanted(sections, True, True))
+    listed = set(wanted(sections, True, False))  # base + scheda Live: se resta attivo, è Fire OS che non lo lascia spegnere
+    optional = {p: "opzionale: musica di Alexa (--alexa-musica)" for p in sections.get("musica", [])}
+    optional.update({p: "opzionale: Alexa extra (--extras); aca può togliere la voce" if p == "com.amazon.aca" else "opzionale (--extras)"
+                     for p in sections.get("extras", [])})
     record = load_record(tv.serial)
     silenced = set(record["appops"]) if record else set()
     disabled = tv.packages("-d")
@@ -777,6 +780,8 @@ def run_ram(tv, sections):
             state = "protetta, silenziata in background"
         elif pkg in listed:
             state = "nell'elenco ma Fire OS non la lascia disattivare"
+        elif pkg in optional:
+            state = optional[pkg]
         elif is_kept(pkg, keep):
             state = "da tenere"
         elif pkg.startswith("com.amazon."):
@@ -843,12 +848,12 @@ def run_clean(tv, sections, args, sdk):
     keep = sections.get("keep", [])
     record = new_record(tv.serial)
     say("[1/3] App Amazon inutili (telemetria, pubblicità, shopping)")
-    refused = clean_packages(tv, record, wanted(sections, not args.tv, args.extras), not args.tv, keep)
+    refused = clean_packages(tv, record, wanted(sections, not args.tv, args.extras, args.alexa_musica), not args.tv, keep)
     say("[2/3] Pacchetti protetti: niente esecuzione in background")
     silence_protected(tv, record, sdk, sections.get("protected", []), refused, keep)
     say("[3/3] Impostazioni su pubblicità e dati")
     apply_settings(tv, record, sdk)
-    write_report(tv, wanted(sections, True, True), keep)
+    write_report(tv, wanted(sections, True, True, True), keep)
     if tv.prop("ro.adb.secure") == "0":
         say("Attenzione: questa Fire Stick accetta ADB da qualunque dispositivo in rete. Quando hai finito esegui 'adb-off'.")
 
@@ -865,7 +870,7 @@ def run_check(tv, sections, args):
         say("Non hai ancora eseguito la pulizia su questa Fire Stick: non c'è niente da confrontare.")
         return 2
     enabled = tv.packages("-e")
-    back = [p for p in wanted(sections, not args.tv, args.extras) if p in enabled and p not in set(record["refused"])]
+    back = [p for p in wanted(sections, not args.tv, args.extras, args.alexa_musica) if p in enabled and p not in set(record["refused"])]
     problems = []
     if record["home"].get("a11y_before") is not None and GUARD not in (tv.setting("secure", "enabled_accessibility_services") or ""):
         problems.append("il servizio Home di FireHome è stato spento")
@@ -885,7 +890,7 @@ def run_restore(tv, sections):
     if not record:
         say("Nessun registro per questa Fire Stick: riattivo tutto l'elenco.")
         record = new_record(tv.serial)
-        record["before"] = {p: "enabled" for p in wanted(sections, True, True)}
+        record["before"] = {p: "enabled" for p in wanted(sections, True, True, True)}
     undo_home(tv, record)
     for slot, old in record["settings"].items():
         namespace, key = slot.split(" ", 1)
@@ -917,6 +922,7 @@ def main():
     parser.add_argument("more", nargs="*", help="altri file .apk (solo per 'install')")
     parser.add_argument("--youtube", action="store_true", help="installa SmartTube (YouTube senza pubblicità) e disattiva YouTube di Amazon")
     parser.add_argument("--tv", action="store_true", help="è una TV con Fire OS integrato, non una Fire Stick: non toglie la scheda Live")
+    parser.add_argument("--alexa-musica", action="store_true", help="toglie anche la musica di Alexa e l'audio multi-room (circa 60 MB di RAM; resta la ricerca vocale)")
     parser.add_argument("--extras", action="store_true", help="toglie anche Alexa extra (timer, multi-room), Silk e Ambient")
     parser.add_argument("--no-home", action="store_true", help="non installare FireHome e non prendere la Home")
     parser.add_argument("--apk", help="usa questo FireHome.apk invece di scaricare l'ultimo")
