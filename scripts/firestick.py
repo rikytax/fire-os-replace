@@ -544,6 +544,8 @@ def install_home(tv, record, sdk, apk_arg):
     if apk is None:
         return False
     out = adb("-s", tv.serial, "install", "-r", str(apk), timeout=240)
+    if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in out:
+        out = reinstall_keeping_files(tv, apk)
     if "Success" not in out:
         say(f"  installazione di FireHome non riuscita: {out.strip().splitlines()[-1] if out.strip() else 'nessuna risposta'}")
         return False
@@ -575,6 +577,24 @@ def install_home(tv, record, sdk, apk_arg):
             return True
     say("  il servizio è attivo ma la prova non ha mostrato FireHome in primo piano: premi Home sul telecomando per controllare.")
     return True
+
+
+def reinstall_keeping_files(tv, apk):
+    """La versione installata è firmata con un'altra chiave: serve disinstallare. I tuoi file si salvano e si rimettono."""
+    say("  la versione installata ha una firma diversa (capita una volta sola): la reinstallo conservando i tuoi file")
+    folder = f"/sdcard/Android/data/{APP_ID}/files"
+    with tempfile.TemporaryDirectory() as tmp:
+        adb("-s", tv.serial, "pull", folder, tmp)  # playlist.m3u, channels.json, domotica.json, suggerimenti.json
+        saved = [f for f in (Path(tmp) / "files").glob("*") if f.is_file()]
+        tv.sh("am", "force-stop", APP_ID)
+        adb("-s", tv.serial, "uninstall", APP_ID)
+        out = adb("-s", tv.serial, "install", str(apk), timeout=240)
+        if "Success" in out and saved:
+            tv.sh("mkdir", "-p", folder)
+            for f in saved:
+                adb("-s", tv.serial, "push", str(f), f"{folder}/{f.name}")
+            say(f"  file ripristinati: {', '.join(f.name for f in saved)}")
+    return out
 
 
 def undo_home(tv, record):

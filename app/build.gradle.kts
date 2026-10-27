@@ -12,17 +12,31 @@ android {
         applicationId = "app.firehome"
         minSdk = 22 // Fire OS 5 (Fire TV Stick 2a gen) in su
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
+    }
+
+    // Chiave di firma FISSA, inclusa nel progetto. Prima si usava la chiave di debug, che GitHub genera nuova a ogni
+    // build: due build avevano firme diverse e Android rifiutava gli aggiornamenti. Non è un segreto (come la chiave
+    // di debug di Android): serve solo a far riconoscere come "la stessa app" le versioni successive, per il sideload.
+    signingConfigs {
+        create("firehome") {
+            storeFile = file("firehome.keystore")
+            storePassword = "firehome"
+            keyAlias = "firehome"
+            keyPassword = "firehome"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("firehome")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Firmato con la chiave di debug: basta per installare via sideload.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("firehome")
         }
     }
 

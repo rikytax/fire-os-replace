@@ -135,7 +135,9 @@ Un solo comando, senza scaricare nulla a mano:
 ./pulisci-firestick.sh home 192.168.1.5
 ```
 
-(con il tuo IP). Lo script scarica da solo l'ultima versione dalla Release: se il repository è privato usa la GitHub CLI (`gh`, già autenticata con `gh auth login`) e controlla lo SHA-256. Reinstalla l'app mantenendo impostazioni e playlist.
+(con il tuo IP). **La prima volta dopo il passaggio alla firma fissa** (versione 0.3.0) lo script nota che l'app installata ha una firma diversa, salva i tuoi file (`playlist.m3u`, `channels.json`, `domotica.json`, `suggerimenti.json`), disinstalla, reinstalla e li rimette: capita una volta sola. Le versioni successive si aggiornano una sopra l'altra. La chiave di firma è inclusa nel progetto (`app/firehome.keystore`): non è un segreto, serve solo a far riconoscere le versioni come "la stessa app".
+
+Lo script scarica da solo l'ultima versione dalla Release: se il repository è privato usa la GitHub CLI (`gh`, già autenticata con `gh auth login`) e controlla lo SHA-256. Reinstalla l'app mantenendo impostazioni e playlist.
 
 ## Domotica (Home Assistant)
 
