@@ -180,7 +180,7 @@ def scan_network():
 
     def probe(host):
         try:
-            with socket.create_connection((host, 5555), timeout=0.6):
+            with socket.create_connection((host, 5555), timeout=1.5):
                 return host
         except OSError:
             return None
@@ -414,7 +414,8 @@ def find_apk(given):
     """FireHome.apk: quello indicato, uno locale, oppure l'ultima versione pubblicata su GitHub."""
     candidates = [Path(given)] if given else [
         HERE.parent / "FireHome.apk",
-        Path.home() / "Downloads" / "FireHome.apk",
+        Path.home() / "Download" / "FireHome.apk",   # cartella in italiano
+        Path.home() / "Downloads" / "FireHome.apk",  # cartella in inglese
         HERE.parent / "app/build/outputs/apk/release/app-release.apk",
     ]
     for c in candidates:
