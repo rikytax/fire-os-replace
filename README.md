@@ -45,6 +45,8 @@ Con `--youtube`, la prima volta, col telecomando in SmartTube: menu a sinistra �
 ./pulisci-firestick.sh --youtube        # ... e YouTube senza pubblicità
 python3 scripts/firestick.py status     # memoria, spazio libero, stato di pulizia e Home
 python3 scripts/firestick.py ram        # i processi che occupano più memoria e cosa sono (decide cosa togliere con i dati)
+python3 scripts/firestick.py riattiva live   # rimette in funzione un gruppo (live, musica, extras), per esempio se Alexa non apre più i canali
+python3 scripts/firestick.py voice-log  # registra cosa succede quando un comando vocale non funziona
 python3 scripts/firestick.py screenshot # schermata della TV in ~/Immagini
 python3 scripts/firestick.py cache      # libera la cache delle app (utile: lo spazio è poco)
 python3 scripts/firestick.py install app.apk   # installa un'app dal PC
@@ -55,7 +57,7 @@ python3 scripts/firestick.py restore    # torna a com'era prima
 python3 scripts/firestick.py adb-off    # spegne il Debug ADB a lavoro finito
 ```
 
-Opzioni: `--alexa-musica` (toglie la musica di Alexa e l'audio multi-room: circa 60 MB di RAM misurati, la ricerca vocale resta), `--extras` (toglie anche sveglie e timer di Alexa, la parte smart home, Silk, Ambient e `aca`: **può togliere la voce di Alexa**, se succede `restore`), `--no-home` (solo pulizia), `--apk FILE`, `--reboot`, `--tv` (TV con Fire OS integrato, non una Fire Stick). Un IP o `usb` come ultimo argomento salta la ricerca automatica.
+Opzioni: `--senza-live` (toglie anche la scheda Live di Amazon: **può impedire ad Alexa di aprire i canali**), `--alexa-musica` (toglie la musica di Alexa e l'audio multi-room: circa 60 MB di RAM misurati, la ricerca vocale resta), `--extras` (toglie anche sveglie e timer di Alexa, la parte smart home, Silk, Ambient e `aca`: **può togliere la voce di Alexa**, se succede `restore`), `--no-home` (solo pulizia), `--apk FILE`, `--reboot`, `--tv` (TV con Fire OS integrato, non una Fire Stick). Un IP o `usb` come ultimo argomento salta la ricerca automatica.
 
 > Il controllo settimanale funziona solo se il Debug ADB resta acceso. Se lo spegni con `adb-off` per sicurezza, il timer non riesce a raggiungere la Fire Stick e tace.
 
@@ -63,7 +65,7 @@ Opzioni: `--alexa-musica` (toglie la musica di Alexa e l'audio multi-room: circa
 
 | Passo | Cosa |
 |---|---|
-| 1. App Amazon inutili | Disattiva (non disinstalla) telemetria, pubblicità, ACR, shopping, Luna, tutorial, app dimostrative, Freevee, Amazon Music e Photos, scheda Live. |
+| 1. App Amazon inutili | Disattiva (non disinstalla) telemetria, pubblicità, ACR, shopping, Luna, tutorial, app dimostrative, Freevee, Amazon Music e Photos. La scheda Live resta (serve ad Alexa per i canali). |
 | 2. Pacchetti protetti | Quelli che Fire OS non lascia disattivare restano, ma perdono l'esecuzione in background. |
 | 3. Impostazioni | Spegne ad tracking, pubblicità basata sugli interessi, invio dati d'uso, video in anteprima nella Home; animazioni più rapide. |
 | 4. YouTube (con `--youtube`) | Installa SmartTube (versione fissata, controllo SHA-256) e disattiva YouTube di Amazon. |
@@ -167,6 +169,22 @@ Anynet+ è il nome Samsung dell'HDMI-CEC: la TV e la Fire Stick si scambiano com
 5. Se è iniziato dopo un aggiornamento della TV, controlla se ne esiste uno più recente.
 
 Mandami `fire-hdmi.txt` se persiste.
+
+## Alexa: canali e volume
+
+**"Alexa, metti Rai 1" non funziona più.** Probabile causa, non confermata: la scheda *Live* di Amazon (`livetv`, `franktvinput`, `hedwig`) è l'elenco dei canali che RaiPlay e Mediaset passano alla Fire TV, e Alexa la usa per aprirli. Le versioni precedenti dello script la disattivavano; ora non lo fa più. Per rimetterla:
+
+```bash
+python3 scripts/firestick.py riattiva live
+```
+
+Poi **riavvia la Fire Stick** e riprova. Se non basta, il colpevole è un altro gruppo: `riattiva musica` (se hai usato `--alexa-musica`) o, per vedere cosa succede davvero, lancia `python3 scripts/firestick.py voice-log`, di' il comando entro 25 secondi e mandami `fire-voice.txt`. Se serve sapere se la causa è FireHome stessa, `./pulisci-firestick.sh restore` rimette Amazon come Home e tutto il resto com'era.
+
+**Il volume cambia di 10 in 10.** Non è un'impostazione della Fire Stick né di questo progetto: è il passo con cui Alexa regola le TV (anche [Sony](https://www.sony.ca/en/electronics/support/televisions-projectors-oled-tvs-android-/xr-55a80k/articles/00197657) e [Sonos](https://en.community.sonos.com/amazon-alexa-and-sonos-229102/alexa-volume-steps-too-large-6796829) segnalano passi da 10), e Amazon non offre un modo per cambiarlo. Cosa puoi fare:
+
+- **Dì la quantità:** "Alexa, alza il volume di 3" (AFTVnews riferisce che sulla Fire TV si può indicare di quanto, [ma è un articolo del 2018](https://www.aftvnews.com/?p=31858): provalo).
+- **Dì il livello:** "Alexa, imposta il volume a 20" evita del tutto il problema dei passi.
+- **Crea una routine** nell'app Alexa con una frase tua (per esempio "più forte") che imposti un volume fisso.
 
 ## Idee per il futuro
 

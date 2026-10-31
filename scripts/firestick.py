@@ -13,6 +13,8 @@ Utilità:
   python3 scripts/firestick.py cache        libera la cache delle app
   python3 scripts/firestick.py install F.apk [G.apk ...]   installa app dal computer
   python3 scripts/firestick.py suggerimenti CHIAVE   attiva i suggerimenti di film e serie (chiave gratuita TMDB)
+  python3 scripts/firestick.py riattiva live|musica|extras   rimette in funzione un gruppo disattivato
+  python3 scripts/firestick.py voice-log    registra cosa succede quando un comando vocale non funziona
   python3 scripts/firestick.py ram          i processi che occupano più memoria, e cosa sono
   python3 scripts/firestick.py hdmi         diagnosi HDMI-CEC (Anynet+ sui Samsung): salva fire-hdmi.txt
   python3 scripts/firestick.py discover-live   cerca i collegamenti diretti ai canali nelle app RaiPlay, Mediaset, La7
@@ -58,7 +60,7 @@ SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee0
 SMARTTUBE_VERSION_CODE = 2446
 STOCK_YOUTUBE = "com.amazon.firetv.youtube"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti", "ram")
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti", "ram", "riattiva", "voice-log")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -763,8 +765,9 @@ def run_ram(tv, sections):
     if not procs:
         die("Non riesco a leggere la memoria dei processi su questa Fire Stick.")
     keep = sections.get("keep", [])
-    listed = set(wanted(sections, True, False))  # base + scheda Live: se resta attivo, è Fire OS che non lo lascia spegnere
-    optional = {p: "opzionale: musica di Alexa (--alexa-musica)" for p in sections.get("musica", [])}
+    listed = set(wanted(sections, False, False))  # solo [base]: se resta attivo, è Fire OS che non lo lascia spegnere
+    optional = {p: "scheda Live: serve ai comandi vocali sui canali (--senza-live)" for p in sections.get("stick", [])}
+    optional.update({p: "opzionale: musica di Alexa (--alexa-musica)" for p in sections.get("musica", [])})
     optional.update({p: "opzionale: Alexa extra (--extras); aca può togliere la voce" if p == "com.amazon.aca" else "opzionale (--extras)"
                      for p in sections.get("extras", [])})
     record = load_record(tv.serial)
@@ -790,6 +793,38 @@ def run_ram(tv, sections):
             state = ""
         say(f"{kb / 1024:6.0f}  {name:<48} {state}")
     say("Dopo una pulizia conviene riavviare la Fire Stick (--reboot): libera la memoria che i processi disattivati ancora occupano.")
+
+
+GROUPS = {"live": "stick", "musica": "musica", "extras": "extras"}
+VOICE_WAIT_SECONDS = 25
+
+
+def run_riattiva(tv, sections, group):
+    """Rimette in funzione un gruppo di pacchetti disattivato (per esempio la scheda Live, se Alexa non apre più i canali)."""
+    if group not in GROUPS:
+        die(f"Gruppo sconosciuto '{group}': scegli tra {', '.join(GROUPS)}.")
+    disabled = tv.packages("-d")
+    targets = [p for p in sections.get(GROUPS[group], []) if p in disabled]
+    for p in targets:
+        tv.sh("pm", "enable", "--user", "0", p)
+    left = [p for p in targets if p in tv.packages("-d")]
+    say(f"Riattivati: {len(targets) - len(left)} pacchetti del gruppo '{group}'.")
+    for p in left:
+        say(f"  non riattivato: {p}")
+    if targets:
+        say("Riavvia la Fire Stick e riprova il comando vocale. Il comando principale non li spegne più da solo.")
+
+
+def run_voice_log(tv):
+    """Registra il log mentre dici un comando che non funziona: serve a capire quale componente lo gestisce."""
+    tv.sh("logcat", "-c")
+    say(f"Adesso di' ad Alexa il comando che non funziona (per esempio: \"Alexa, metti Rai 1\"). Registro per {VOICE_WAIT_SECONDS} secondi...")
+    time.sleep(VOICE_WAIT_SECONDS)
+    out = tv.sh("logcat", "-d", "-t", "6000", timeout=120)
+    pattern = re.compile(r"alexa|vizzini|voice|livetv|channel|raiplay|mediaset|deeplink|ActivityManager|HomeGuard|firehome|directive", re.I)
+    lines = [l for l in out.splitlines() if pattern.search(l)]
+    Path("fire-voice.txt").write_text("\n".join(lines[-400:]) + "\n")
+    say(f"Salvato fire-voice.txt ({len(lines[-400:])} righe). Mandamelo insieme a cosa hai detto e a cosa è successo.")
 
 
 def run_suggerimenti(tv, key):
@@ -848,7 +883,7 @@ def run_clean(tv, sections, args, sdk):
     keep = sections.get("keep", [])
     record = new_record(tv.serial)
     say("[1/3] App Amazon inutili (telemetria, pubblicità, shopping)")
-    refused = clean_packages(tv, record, wanted(sections, not args.tv, args.extras, args.alexa_musica), not args.tv, keep)
+    refused = clean_packages(tv, record, wanted(sections, args.senza_live and not args.tv, args.extras, args.alexa_musica), not args.tv, keep)
     say("[2/3] Pacchetti protetti: niente esecuzione in background")
     silence_protected(tv, record, sdk, sections.get("protected", []), refused, keep)
     say("[3/3] Impostazioni su pubblicità e dati")
@@ -870,7 +905,7 @@ def run_check(tv, sections, args):
         say("Non hai ancora eseguito la pulizia su questa Fire Stick: non c'è niente da confrontare.")
         return 2
     enabled = tv.packages("-e")
-    back = [p for p in wanted(sections, not args.tv, args.extras, args.alexa_musica) if p in enabled and p not in set(record["refused"])]
+    back = [p for p in wanted(sections, args.senza_live and not args.tv, args.extras, args.alexa_musica) if p in enabled and p not in set(record["refused"])]
     problems = []
     if record["home"].get("a11y_before") is not None and GUARD not in (tv.setting("secure", "enabled_accessibility_services") or ""):
         problems.append("il servizio Home di FireHome è stato spento")
@@ -922,6 +957,7 @@ def main():
     parser.add_argument("more", nargs="*", help="altri file .apk (solo per 'install')")
     parser.add_argument("--youtube", action="store_true", help="installa SmartTube (YouTube senza pubblicità) e disattiva YouTube di Amazon")
     parser.add_argument("--tv", action="store_true", help="è una TV con Fire OS integrato, non una Fire Stick: non toglie la scheda Live")
+    parser.add_argument("--senza-live", action="store_true", help="toglie anche la scheda Live di Amazon (può impedire ad Alexa di aprire i canali)")
     parser.add_argument("--alexa-musica", action="store_true", help="toglie anche la musica di Alexa e l'audio multi-room (circa 60 MB di RAM; resta la ricerca vocale)")
     parser.add_argument("--extras", action="store_true", help="toglie anche Alexa extra (timer, multi-room), Silk e Ambient")
     parser.add_argument("--no-home", action="store_true", help="non installare FireHome e non prendere la Home")
@@ -930,7 +966,9 @@ def main():
     args = parser.parse_args()
     if args.command not in COMMANDS:  # 'firestick.py 192.168.1.50' = comando predefinito su quell'IP
         args.command, args.target = "all", args.command
-    files, key = [], None
+    files, key, group = [], None, None
+    if args.command == "riattiva":  # 'riattiva live': l'argomento è il gruppo
+        group, args.target = args.target, "auto"
     if args.command == "suggerimenti":  # 'suggerimenti CHIAVE': l'argomento è la chiave, non un indirizzo
         key, args.target = args.target, "auto"
     if args.command == "install":  # 'install a.apk b.apk': tutti gli argomenti sono file
@@ -964,6 +1002,10 @@ def main():
         run_suggerimenti(tv, key)
     if args.command == "ram":
         run_ram(tv, sections)
+    if args.command == "riattiva":
+        run_riattiva(tv, sections, group)
+    if args.command == "voice-log":
+        run_voice_log(tv)
     if args.command == "hdmi":
         run_hdmi(tv)
     if args.command == "discover-live":

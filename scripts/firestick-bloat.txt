@@ -24,7 +24,7 @@
 #   com.amazon.device.logmanager, com.amazon.device.crashmanager, com.amazon.diode,
 #   com.fireos.usagestats.proxy, com.amazon.ftvads.deeplinking, com.amazon.tv.csapp
 #
-# Sezioni: [base] sempre; [stick] con --stick; [musica] con --alexa-musica; [extras] con --extras.
+# Sezioni: [base] sempre; [stick] con --senza-live; [musica] con --alexa-musica; [extras] con --extras.
 
 [base]
 # Telemetria e statistiche
@@ -112,8 +112,10 @@ com.univision.android
 tv.pluto.android
 
 [stick]
-# Scheda "Live" e guida: una Fire Stick non ha sintonizzatore né ingressi HDMI.
-# Su una Fire TV Edition (televisore) NON usare --stick: spegnerebbe gli ingressi.
+# Con --senza-live. Scheda "Live" e guida TV di Amazon. Una Fire Stick non ha sintonizzatore né ingressi HDMI, ma questa
+# scheda è probabilmente ciò che permette ad Alexa di aprire i canali ("Alexa, metti Rai 1"): per questo NON è nella
+# pulizia predefinita. Se l'hai già disattivata: python3 scripts/firestick.py riattiva live
+# Su una Fire TV Edition (televisore) non usarla mai: spegnerebbe gli ingressi.
 com.amazon.tv.livetv
 com.amazon.franktvinput
 com.amazon.hedwig                          # Fire TV Channels
