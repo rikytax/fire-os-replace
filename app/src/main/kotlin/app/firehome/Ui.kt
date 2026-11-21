@@ -185,18 +185,6 @@ private fun Glass(
                 onFocus?.invoke(it.isFocused)
             }
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .drawBehind {
-                if (lift > 0f) {
-                    drawCircle(
-                        Brush.radialGradient(
-                            listOf((if (tinted) tint else Color.White).copy(alpha = 0.26f * lift), Color.Transparent),
-                            center = center,
-                            radius = size.maxDimension * 0.72f,
-                        ),
-                        radius = size.maxDimension * 0.72f,
-                    )
-                }
-            }
             .border(
                 (1.1f + 1.1f * lift).dp,
                 Brush.linearGradient(listOf(Color.White.copy(alpha = 0.50f + 0.45f * lift), Color.White.copy(alpha = 0.06f + 0.10f * lift))),
@@ -206,6 +194,8 @@ private fun Glass(
             .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.17f + 0.10f * lift), Color.White.copy(alpha = 0.05f + 0.06f * lift))))
             .background(Brush.linearGradient(0f to Color.White.copy(alpha = 0.20f), 0.55f to Color.Transparent, 1f to Color.Transparent))
             .then(if (tinted) Modifier.background(tint.copy(alpha = 0.20f)) else Modifier)
+            // L'alone del focus sta DENTRO il riquadro: fuori verrebbe tagliato dalle righe che scorrono (rettangolo scuro).
+            .background(Brush.radialGradient(listOf((if (tinted) tint else Color.White).copy(alpha = 0.30f * lift), Color.Transparent)))
             .clickable(onClick = onClick),
         content = content,
     )
