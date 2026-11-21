@@ -23,9 +23,15 @@ private sealed interface Screen {
 class MainActivity : ComponentActivity() {
 
     private var apps by mutableStateOf(emptyList<InstalledApp>())
-    private var channels by mutableStateOf(emptyList<Channel>())
+    private var localChannels by mutableStateOf(emptyList<Channel>())
     private var domotica by mutableStateOf<Domotica?>(null)
     private var suggestions by mutableStateOf(emptyList<Suggestion>())
+    private var jellyfinConfig: JellyfinConfig? = null
+    private var jellyfinChannels by mutableStateOf(emptyList<Channel>())
+    private var openLiveStreamId: String? = null
+
+    // I canali di Jellyfin arrivano dopo, da internet: si combinano al volo con quelli locali.
+    private val channels: List<Channel> get() = jellyfinChannels + localChannels
     private var lastName by mutableStateOf<String?>(null)
     private var screen by mutableStateOf<Screen>(Screen.Home)
 
@@ -37,7 +43,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             FireTheme {
                 // Il Back non chiude mai la Home: dalle altre schermate torna indietro, qui non fa nulla.
-                BackHandler { screen = Screen.Home }
+                BackHandler {
+                    closeLiveStream()
+                    screen = Screen.Home
+                }
                 val current = screen
                 if (current is Screen.Playing) {
                     PlayerScreen(current.channel, zap = ::zap)
@@ -61,6 +70,7 @@ class MainActivity : ComponentActivity() {
                                 shortcuts = apps.shortcuts(),
                                 casa = domotica?.actions?.map { it.name } ?: emptyList(),
                                 suggestions = suggestions,
+                                live = jellyfinChannels,
                                 watchLabel = ::watchLabel,
                                 onLast = { channels.firstOrNull { it.name == lastName }?.let(::open) },
                                 onApp = ::launch,
@@ -68,6 +78,7 @@ class MainActivity : ComponentActivity() {
                                 onCasa = ::runHomeAction,
                                 onMirror = ::openMirroring,
                                 onSuggestion = ::openSuggestion,
+                                onChannel = ::open,
                             )
                         }
                     }
@@ -80,8 +91,21 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Ricarica a ogni ritorno: vede le app appena installate e i file channels.json / playlist.m3u aggiornati.
         apps = installedApps(this)
-        channels = loadChannels(this) + loadPlaylist(this)
+        localChannels = loadChannels(this) + loadPlaylist(this)
         domotica = loadDomotica(this)
+        jellyfinConfig = Jellyfin.loadConfig(this)
+        jellyfinConfig?.let { config ->
+            Thread {
+                val live = runCatching { Jellyfin.channels(config) }.getOrDefault(emptyList()).map {
+                    Channel(
+                        name = it.name, group = "Jellyfin · Live TV", color = android.graphics.Color.parseColor("#1B2A44"),
+                        app = null, url = null, stream = null, dash = false, license = null,
+                        jellyfinId = it.id, nowPlaying = it.nowPlaying.ifEmpty { null },
+                    )
+                }
+                runOnUiThread { jellyfinChannels = live }
+            }.start()
+        }
         // I suggerimenti arrivano da internet (con una cache di 12 ore): si caricano fuori dal thread principale.
         Thread {
             val loaded = loadSuggestions(this)
@@ -101,12 +125,49 @@ class MainActivity : ComponentActivity() {
     // Il tasto Home mentre siamo già aperti riporta alla schermata principale.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        closeLiveStream()
         screen = Screen.Home
+    }
+
+    override fun onStop() {
+        super.onStop()
+        closeLiveStream()
+    }
+
+    /** Chiude sul server Jellyfin il flusso aperto per la visione (altrimenti resterebbe occupato). */
+    private fun closeLiveStream() {
+        val id = openLiveStreamId ?: return
+        openLiveStreamId = null
+        val config = jellyfinConfig ?: return
+        Thread { Jellyfin.close(config, id) }.start()
+    }
+
+    private fun playJellyfin(channel: Channel) {
+        val config = jellyfinConfig
+        val id = channel.jellyfinId
+        if (config == null || id == null) return
+        Toast.makeText(this, "Apro ${channel.name}…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val live = runCatching { Jellyfin.open(config, id) }.getOrNull()
+            runOnUiThread {
+                if (live == null) {
+                    Toast.makeText(this, "${channel.name} non è disponibile", Toast.LENGTH_LONG).show()
+                } else {
+                    closeLiveStream()
+                    openLiveStreamId = live.liveStreamId
+                    screen = Screen.Playing(channel.copy(stream = live.url, mime = live.mime))
+                }
+            }
+        }.start()
     }
 
     private fun open(channel: Channel) {
         lastName = channel.name
         prefs.edit().putString(KEY_LAST, channel.name).apply()
+        if (channel.jellyfinId != null) {
+            playJellyfin(channel)
+            return
+        }
         if (channel.stream != null) {
             screen = Screen.Playing(channel)
             return
@@ -127,7 +188,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun zap(step: Int) {
-        val playable = channels.filter { it.stream != null }
+        val playable = channels.filter { it.stream != null || it.jellyfinId != null }
         val current = (screen as? Screen.Playing)?.channel ?: return
         if (playable.size < 2) return
         val index = playable.indexOfFirst { it.name == current.name }

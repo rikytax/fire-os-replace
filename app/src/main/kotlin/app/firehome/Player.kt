@@ -43,6 +43,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -51,7 +52,14 @@ import kotlinx.coroutines.delay
 private fun Channel.toMediaItem(): MediaItem =
     MediaItem.Builder()
         .setUri(stream)
-        .setMimeType(if (dash) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
+        .apply {
+            when (mime) {
+                "auto" -> Unit
+                "hls" -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                "dash" -> setMimeType(MimeTypes.APPLICATION_MPD)
+                else -> setMimeType(if (dash) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
+            }
+        }
         .apply {
             license?.let {
                 setDrmConfiguration(MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID).setLicenseUri(it).build())
@@ -68,8 +76,12 @@ fun PlayerScreen(channel: Channel, zap: (Int) -> Unit) {
     val ctx = LocalContext.current
     val exo = remember {
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+        // Le credenziali di Jellyfin si aggiungono solo alle richieste verso il server Jellyfin, mai ad altri siti.
+        val authenticated = ResolvingDataSource.Factory(DefaultDataSource.Factory(ctx, http)) { spec ->
+            Jellyfin.headersFor(spec.uri)?.let { spec.withAdditionalHeaders(it) } ?: spec
+        }
         ExoPlayer.Builder(ctx)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(authenticated))
             .build()
     }
     var buffering by remember { mutableStateOf(true) }

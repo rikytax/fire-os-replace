@@ -15,6 +15,7 @@ Utilità:
   python3 scripts/firestick.py suggerimenti CHIAVE   attiva i suggerimenti di film e serie (chiave gratuita TMDB)
   python3 scripts/firestick.py riattiva live|musica|extras   rimette in funzione un gruppo disattivato
   python3 scripts/firestick.py voice-log    registra cosa succede quando un comando vocale non funziona
+  python3 scripts/firestick.py jellyfin http://IP:8096 UTENTE   collega la Live TV del tuo Jellyfin a FireHome
   python3 scripts/firestick.py ram          i processi che occupano più memoria, e cosa sono
   python3 scripts/firestick.py hdmi         diagnosi HDMI-CEC (Anynet+ sui Samsung): salva fire-hdmi.txt
   python3 scripts/firestick.py discover-live   cerca i collegamenti diretti ai canali nelle app RaiPlay, Mediaset, La7
@@ -28,6 +29,7 @@ L'elenco dei pacchetti è in firestick-bloat.txt.
 """
 import argparse
 import concurrent.futures
+import getpass
 import datetime
 import hashlib
 import json
@@ -39,6 +41,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -60,7 +63,7 @@ SMARTTUBE_SHA256 = "4a35b90940612e048e4e9cb9e10379f7db1e84f30375994129f10a571ee0
 SMARTTUBE_VERSION_CODE = 2446
 STOCK_YOUTUBE = "com.amazon.firetv.youtube"
 
-COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti", "ram", "riattiva", "voice-log")
+COMMANDS = ("all", "clean", "home", "check", "restore", "adb-off", "status", "screenshot", "cache", "install", "hdmi", "discover-live", "suggerimenti", "ram", "riattiva", "voice-log", "jellyfin")
 PKG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Pacchetti Android di base: senza, il sistema può non avviarsi più.
 CORE_RE = re.compile(
@@ -795,6 +798,94 @@ def run_ram(tv, sections):
     say("Dopo una pulizia conviene riavviare la Fire Stick (--reboot): libera la memoria che i processi disattivati ancora occupano.")
 
 
+JF_AUTH = 'MediaBrowser Client="FireHome", Version="0.4.0", DeviceId="firehome-pc-check", Device="PC"'
+
+
+def jf_request(method, url, body=None, token=None, timeout=25):
+    headers = {"Authorization": JF_AUTH + (f', Token="{token}"' if token else ""), "Accept": "application/json"}
+    if token:
+        headers["X-Emby-Token"] = token
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=timeout) as r:
+        raw = r.read().decode("utf-8", "replace")
+    return json.loads(raw) if raw.strip() else {}
+
+
+def jellyfin_check(url, user, password):
+    """Prova dal PC lo stesso percorso che farà FireHome: login, elenco canali, apertura di un canale di prova."""
+    base = url.rstrip("/")
+    try:
+        auth = jf_request("POST", base + "/Users/AuthenticateByName", {"Username": user, "Pw": password})
+    except urllib.error.HTTPError as e:
+        die(f"Jellyfin ha rifiutato l'accesso (HTTP {e.code}): utente o password sbagliati?")
+    except Exception as e:
+        die(f"Non riesco a raggiungere Jellyfin su {base} ({e}). Indirizzo e porta giusti? Di solito è http://IP:8096")
+    token, uid = auth["AccessToken"], auth["User"]["Id"]
+    say("  accesso riuscito")
+    try:
+        items = jf_request("GET", f"{base}/LiveTv/Channels?userId={uid}&addCurrentProgram=true&limit=300", token=token).get("Items", [])
+    except Exception as e:
+        die(f"Jellyfin non mi lascia leggere la Live TV ({e}): l'utente ha accesso alla Live TV?")
+    if not items:
+        die("Jellyfin non ha canali di Live TV per questo utente: configurali in Jellyfin (Dashboard > Live TV) e dai all'utente l'accesso.")
+    say(f"  canali trovati: {len(items)}")
+    for item in items[:5]:
+        now = (item.get("CurrentProgram") or {}).get("Name", "")
+        say(f"    {item.get('Number', '')!s:>4} {item.get('Name', '')}" + (f"  (in onda: {now})" if now else ""))
+    # Prova di riproduzione: apre il primo canale, legge qualche byte e lo richiude.
+    first = items[0]
+    body = {
+        "UserId": uid, "AutoOpenLiveStream": True, "MaxStreamingBitrate": 12000000, "MaxAudioChannels": 2,
+        "EnableDirectPlay": True, "EnableDirectStream": True, "EnableTranscoding": True,
+        "DeviceProfile": {
+            "Name": "FireHome", "MaxStreamingBitrate": 12000000,
+            "DirectPlayProfiles": [{"Container": "ts,mpegts", "Type": "Video", "VideoCodec": "h264,hevc,mpeg2video", "AudioCodec": "aac,ac3,eac3,mp3,mp2"}],
+            "TranscodingProfiles": [{"Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac,mp3", "Protocol": "hls",
+                                     "Context": "Streaming", "MaxAudioChannels": "2", "MinSegments": 1, "BreakOnNonKeyFrames": True}],
+        },
+    }
+    live_id = None
+    try:
+        info = jf_request("POST", f"{base}/Items/{first['Id']}/PlaybackInfo", body, token=token, timeout=60)
+        source = (info.get("MediaSources") or [{}])[0]
+        live_id = source.get("LiveStreamId") or None
+        if source.get("TranscodingUrl"):
+            stream, kind = f"{base}{source['TranscodingUrl']}", "HLS dal server (transcodifica)"
+        elif live_id:
+            stream, kind = f"{base}/LiveTv/LiveStreamFiles/{live_id}/stream.{(source.get('Container') or 'ts').split(',')[0]}", "flusso diretto"
+        else:
+            raise ValueError("il server non ha indicato un flusso")
+        request = urllib.request.Request(stream, headers={"Authorization": JF_AUTH + f', Token="{token}"', "X-Emby-Token": token})
+        with urllib.request.urlopen(request, timeout=40) as r:
+            chunk = r.read(2048)
+        say(f"  canale di prova '{first.get('Name')}': {kind}, ricevuti {len(chunk)} byte")
+    except Exception as e:
+        say(f"  attenzione: il canale di prova '{first.get('Name')}' non si è aperto ({e}). Controlla che si veda da Jellyfin.")
+    finally:
+        if live_id:
+            try:
+                jf_request("POST", f"{base}/LiveStreams/Close?liveStreamId={live_id}", token=token)
+            except Exception:
+                pass
+    return base
+
+
+def run_jellyfin(tv, base, user, password):
+    folder = f"/sdcard/Android/data/{APP_ID}/files"
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "jellyfin.json"
+        config.write_text(json.dumps({"url": base, "user": user, "password": password}))
+        tv.sh("mkdir", "-p", folder)
+        out = adb("-s", tv.serial, "push", str(config), f"{folder}/jellyfin.json")
+    if "pushed" not in out:
+        die(f"Non riesco a scrivere sulla Fire Stick ({out.strip().splitlines()[-1] if out.strip() else 'nessuna risposta'}). FireHome è installata e aperta almeno una volta?")
+    say("Fatto. Riapri FireHome: i canali compaiono in TV Live e in 'In diretta ora'.")
+
+
 GROUPS = {"live": "stick", "musica": "musica", "extras": "extras"}
 VOICE_WAIT_SECONDS = 25
 
@@ -966,7 +1057,10 @@ def main():
     args = parser.parse_args()
     if args.command not in COMMANDS:  # 'firestick.py 192.168.1.50' = comando predefinito su quell'IP
         args.command, args.target = "all", args.command
-    files, key, group = [], None, None
+    files, key, group, jf = [], None, None, None
+    if args.command == "jellyfin":  # 'jellyfin URL UTENTE [PASSWORD]': la password, se manca, si chiede senza mostrarla
+        jf = [args.target] + args.more
+        args.target = "auto"
     if args.command == "riattiva":  # 'riattiva live': l'argomento è il gruppo
         group, args.target = args.target, "auto"
     if args.command == "suggerimenti":  # 'suggerimenti CHIAVE': l'argomento è la chiave, non un indirizzo
@@ -976,6 +1070,16 @@ def main():
 
     global ADB
     ADB = find_adb()
+    if args.command == "jellyfin":
+        if len(jf) < 2:
+            die("Uso: firestick.py jellyfin http://IP:8096 UTENTE [PASSWORD]")
+        password = jf[2] if len(jf) > 2 else getpass.getpass(f"Password di {jf[1]} su Jellyfin: ")
+        say("Provo il tuo Jellyfin...")
+        base = jellyfin_check(jf[0], jf[1], password)
+        tv = Tv(connect("auto"))
+        preflight(tv)
+        run_jellyfin(tv, base, jf[1], password)
+        return
     tv = Tv(connect(args.target))
     sdk = preflight(tv)
     sections = load_sections()

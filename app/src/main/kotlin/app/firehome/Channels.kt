@@ -20,6 +20,9 @@ data class Channel(
     val stream: String?,
     val dash: Boolean,
     val license: String?,
+    val jellyfinId: String? = null, // canale della Live TV di Jellyfin: l'indirizzo si ricava all'apertura
+    val nowPlaying: String? = null,
+    val mime: String? = null, // "hls", "dash" o "auto" (il player lo riconosce da solo); null = in base a dash
 )
 
 /**

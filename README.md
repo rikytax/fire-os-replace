@@ -106,18 +106,16 @@ Salvala come `playlist.m3u` e caricala: `adb push playlist.m3u /sdcard/Android/d
 
 ## La Home
 
-Stile "ghiaccio": blu notte con azzurro, ispirato al tuo mockup ma adattato a ciò che una Fire Stick può davvero fare. Niente sfocature costose: solo gradienti, bordi tenui e un bagliore al focus.
+Stile "vetro" alla Apple TV, adattato a ciò che una Fire Stick può fare. Niente sfocature reali (troppo pesanti per questo hardware): trasparenze, riflessi e bordi luminosi disegnati con gradienti.
 
-- **Barra laterale** (sempre con icona e nome): *Home*, *TV Live*, *App*, *Impostazioni*.
-- **In alto:** stato reale della rete (*Wi-Fi 5 GHz*, *Ethernet*...), la **RAM libera** e l'orologio.
-- **Banner in primo piano:** un film o una serie di tendenza in Italia, con locandina di sfondo, voto, trama e il pulsante **Guarda su Netflix / Prime Video / Disney+...** (apre l'app giusta e ti dice cosa cercare; "Altro titolo" passa al successivo). Compare solo se hai attivato la chiave TMDB: altrimenti non c'è nessun banner e le app salgono in cima.
-- **Le tue app:** una griglia a 4 colonne con tessere ampie: l'icona vera di ogni app e il nome (Netflix, Prime Video, Disney+, Jellyfin, YouTube, Spotify, BuddyFit), poi *Tutte le app*.
-- **Controlli rapidi:** *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica. *TV Live* è nella barra laterale.
-- **Consigliati per te:** locandine dei titoli disponibili sui tuoi servizi.
+- **Barra in alto:** a sinistra la rete reale (*Wi-Fi 5 GHz*...) e la RAM libera, al centro le sezioni (*Home*, *TV Live*, *App*, *Impostazioni*), a destra l'ora.
+- **Le app, in una riga sola:** icone grandi di vetro con il nome sotto, tutte visibili: Netflix, Prime Video, Disney+, Jellyfin, YouTube, Spotify, BuddyFit e *Tutte le app*.
+- **Lo sfondo segue il focus:** si illumina del colore dell'elemento selezionato (rosso su Netflix, verde su Spotify...), come tvOS.
+- **In diretta ora:** i canali della tua Live TV di Jellyfin, con il programma in onda (se l'hai collegata: vedi sotto).
+- **Azioni rapide:** *Riprendi* (l'ultimo canale), *Duplica schermo* e le azioni di domotica.
+- **Banner e consigli:** con la chiave TMDB compare in alto un titolo in primo piano e in fondo le locandine dei film e delle serie disponibili sui tuoi servizi (vedi sotto). Senza chiave, in alto c'è solo il saluto.
 
 **Si adatta al televisore.** L'interfaccia si ridimensiona da sola in base alla risoluzione reale dello schermo: se cambi TV (720p, 1080p, 4K) non serve toccare nulla.
-
-**Cosa ho lasciato fuori dal mockup, e perché:** gli *ingressi HDMI*, la PS5, le *AirPods* e il *Night Sound* (una Fire Stick non ha ingressi e non espone queste funzioni), e le barre di avanzamento di *Continua a guardare* (Netflix e le altre app non dicono dove sei arrivato).
 
 ### Attivare i suggerimenti (una volta sola, gratis)
 
@@ -129,6 +127,17 @@ I dati vengono da [TMDB](https://www.themoviedb.org/) (la disponibilità in stre
 4. Riapri FireHome: i suggerimenti compaiono dopo qualche secondo e si aggiornano ogni 12 ore.
 
 Senza chiave la riga semplicemente non compare. *Questo prodotto usa l'API di TMDB ma non è approvato né certificato da TMDB.*
+
+### TV Live da Jellyfin
+
+Se hai un server Jellyfin con la **Live TV** configurata (un sintonizzatore, un abbonamento IPTV regolare, una playlist di una fonte di cui hai i diritti), FireHome mostra quei canali nella schermata *TV Live* e nella riga *In diretta ora*, e li riproduce con il suo player. **FireHome non contiene né cerca liste di canali**: usa solo quelli che il tuo Jellyfin già conosce. Se la fonte sia lecita dipende da te.
+
+1. In Jellyfin, crea un **utente dedicato** (per esempio `firehome`) con accesso alla sola Live TV: la password resta in un file sulla Fire Stick.
+2. Dal PC: `python3 scripts/firestick.py jellyfin http://IP-DEL-SERVER:8096 firehome` (chiede la password senza mostrarla).
+3. Lo script **prova prima il tuo Jellyfin**: login, elenco canali e apertura di un canale di prova. Solo se funziona scrive la configurazione sulla Fire Stick.
+4. Riapri FireHome.
+
+Su/Giù cambia canale nel player, e il flusso sul server viene chiuso quando esci. Non ho potuto provarlo contro un vero Jellyfin: l'ho verificato con un server finto che segue la specifica ufficiale. Se un canale non parte, mandami il testo del comando e dimmi cosa vedi.
 
 ### Aggiornare FireHome sulla Fire Stick
 
